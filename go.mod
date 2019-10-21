@@ -5,11 +5,11 @@ go 1.12
 require (
 	github.com/imdario/mergo v0.3.8 // indirect
 	github.com/openshift/generic-admission-server v1.14.0
-	github.com/spf13/cobra v0.0.5 // indirect
-	k8s.io/api v0.0.0-20190918155943-95b840bb6a1f
-	k8s.io/apimachinery v0.0.0-20191020214737-6c8691705fc5
-	k8s.io/apiserver v0.0.0-20191018030144-550b75f0da71 // indirect
+	k8s.io/api v0.0.0
+	k8s.io/apimachinery v0.0.0
 	k8s.io/client-go v11.0.0+incompatible
+	k8s.io/klog v0.4.0
+	k8s.io/kubernetes v1.16.2
 )
 
 replace (

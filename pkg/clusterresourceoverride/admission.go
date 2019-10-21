@@ -1,8 +1,19 @@
 package clusterresourceoverride
 
 import (
+	"errors"
+
+	admissionresponse "github.com/openshift/cluster-resource-override-admission/pkg/response"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/klog"
+	coreapi "k8s.io/kubernetes/pkg/apis/core"
+)
+
+const (
+	PluginName                        = "autoscaling.openshift.io/ClusterResourceOverride"
+	clusterResourceOverrideAnnotation = "autoscaling.openshift.io/cluster-resource-override-enabled"
 )
 
 // NewInClusterAdmission returns a new instance of Admission that is appropriate
@@ -27,4 +38,60 @@ type Admission interface {
 	// It returns an AdmissionResponse that is set appropriately. On success,
 	// the response should contain the patch for update.
 	Admit(admissionSpec *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse
+}
+
+var (
+	BadRequestErr = errors.New("unexpected object")
+)
+
+type clusterResourceOverrideAdmission struct {
+	nsLister corev1listers.NamespaceLister
+}
+
+func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1beta1.AdmissionRequest) bool {
+	if request.Resource.Resource == string(coreapi.ResourcePods) &&
+		request.SubResource == "" &&
+		(request.Operation == admissionv1beta1.Create || request.Operation == admissionv1beta1.Update) {
+
+		return true
+	}
+
+	return false
+}
+
+func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1beta1.AdmissionRequest) (exempt bool, response *admissionv1beta1.AdmissionResponse) {
+	pod, ok := request.Object.Object.(*coreapi.Pod)
+	if !ok {
+		response = admissionresponse.WithBadRequest(request, BadRequestErr)
+		return
+	}
+
+	klog.V(5).Infof("%s is looking at creating pod %s in project %s", PluginName, pod.Name, request.Namespace)
+
+	// allow annotations on project to override
+	ns, err := p.nsLister.Get(request.Namespace)
+	if err != nil {
+		klog.Warningf("%s got an error retrieving namespace: %v", PluginName, err)
+		response = admissionresponse.WithForbidden(request, err)
+		return
+	}
+
+	projectEnabledPlugin, exists := ns.Annotations[clusterResourceOverrideAnnotation]
+	if exists && projectEnabledPlugin != "true" {
+		klog.V(5).Infof("%s is disabled for project %s", PluginName, request.Namespace)
+		exempt = true
+		return
+	}
+
+	if isExemptedNamespace(ns.Name) {
+		klog.V(5).Infof("%s is skipping exempted project %s", PluginName, request.Namespace)
+		exempt = true // project is exempted, do nothing
+		return
+	}
+
+	return
+}
+
+func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse {
+	return nil
 }
