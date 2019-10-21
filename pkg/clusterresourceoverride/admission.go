@@ -2,8 +2,12 @@ package clusterresourceoverride
 
 import (
 	"errors"
+	"time"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 
 	admissionresponse "github.com/openshift/cluster-resource-override-admission/pkg/response"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
@@ -17,11 +21,52 @@ import (
 const (
 	PluginName                        = "autoscaling.openshift.io/ClusterResourceOverride"
 	clusterResourceOverrideAnnotation = "autoscaling.openshift.io/cluster-resource-override-enabled"
+	defaultResyncPeriod               = 5 * time.Hour
+	inClusterConfigFilePath           = "/configuration/cluster-resource-override.yaml"
 )
+
+// ConfigLoaderFunc loads a Config object from appropriate source and returns it.
+type ConfigLoaderFunc func() (config *Config, err error)
 
 // NewInClusterAdmission returns a new instance of Admission that is appropriate
 // to be consumed in cluster.
 func NewInClusterAdmission(kubeClientConfig *restclient.Config) (admission Admission, err error) {
+	configLoader := func() (config *Config, err error) {
+		externalConfig, err := DecodeWithFile(inClusterConfigFilePath)
+		if err != nil {
+			return
+		}
+
+		config = Convert(externalConfig)
+		return
+	}
+
+	return NewAdmission(kubeClientConfig, configLoader)
+}
+
+// NewInClusterAdmission returns a new instance of Admission that is appropriate
+// to be consumed in cluster.
+func NewAdmission(kubeClientConfig *restclient.Config, configLoaderFunc ConfigLoaderFunc) (admission Admission, err error) {
+	config, err := configLoaderFunc()
+	if err != nil {
+		return
+	}
+
+	client, err := kubernetes.NewForConfig(kubeClientConfig)
+	if err != nil {
+		return
+	}
+
+	factory := informers.NewSharedInformerFactory(client, defaultResyncPeriod)
+	limitRangesLister := factory.Core().V1().LimitRanges().Lister()
+	nsLister := factory.Core().V1().Namespaces().Lister()
+
+	admission = &clusterResourceOverrideAdmission{
+		config:            config,
+		nsLister:          nsLister,
+		limitRangesLister: limitRangesLister,
+	}
+
 	return
 }
 
@@ -49,7 +94,7 @@ var (
 
 type clusterResourceOverrideAdmission struct {
 	config            *Config
-	nsLister corev1listers.NamespaceLister
+	nsLister          corev1listers.NamespaceLister
 	limitRangesLister corev1listers.LimitRangeLister
 }
 

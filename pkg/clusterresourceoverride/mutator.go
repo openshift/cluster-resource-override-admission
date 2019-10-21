@@ -2,6 +2,7 @@ package clusterresourceoverride
 
 import (
 	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog"
@@ -9,12 +10,12 @@ import (
 )
 
 const (
-	cpuBaseScaleFactor                = 1000.0 / (1024.0 * 1024.0 * 1024.0) // 1000 milliCores per 1GiB
+	cpuBaseScaleFactor = 1000.0 / (1024.0 * 1024.0 * 1024.0) // 1000 milliCores per 1GiB
 )
 
 var (
-	cpuFloor      = resource.MustParse("1m")
-	memFloor      = resource.MustParse("1Mi")
+	cpuFloor = resource.MustParse("1m")
+	memFloor = resource.MustParse("1Mi")
 )
 
 func newMutator(config *Config, nsCPUFloor, nsMemFloor *resource.Quantity) *mutator {
