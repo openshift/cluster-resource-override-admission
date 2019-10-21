@@ -36,7 +36,7 @@ github.com/davecgh/go-spew/spew
 # github.com/emicklei/go-restful v2.9.5+incompatible
 github.com/emicklei/go-restful
 github.com/emicklei/go-restful/log
-# github.com/evanphx/json-patch v4.2.0+incompatible
+# github.com/evanphx/json-patch v4.5.0+incompatible
 github.com/evanphx/json-patch
 # github.com/go-openapi/jsonpointer v0.19.2
 github.com/go-openapi/jsonpointer
@@ -104,6 +104,8 @@ github.com/openshift/generic-admission-server/pkg/cmd/server
 github.com/openshift/generic-admission-server/pkg/registry/admissionreview
 # github.com/pborman/uuid v1.2.0
 github.com/pborman/uuid
+# github.com/pkg/errors v0.8.1
+github.com/pkg/errors
 # github.com/prometheus/client_golang v0.9.2
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/prometheus/promhttp
@@ -167,6 +169,8 @@ golang.org/x/text/transform
 golang.org/x/text/width
 # golang.org/x/time v0.0.0-20181108054448-85acf8d2951c
 golang.org/x/time/rate
+# gomodules.xyz/jsonpatch/v2 v2.0.1
+gomodules.xyz/jsonpatch/v2
 # google.golang.org/appengine v1.5.0
 google.golang.org/appengine/urlfetch
 google.golang.org/appengine/internal
@@ -220,8 +224,8 @@ gopkg.in/natefinch/lumberjack.v2
 gopkg.in/yaml.v2
 # k8s.io/api v0.0.0 => k8s.io/api v0.0.0-20190918155943-95b840bb6a1f
 k8s.io/api/admission/v1beta1
-k8s.io/api/authentication/v1
 k8s.io/api/core/v1
+k8s.io/api/authentication/v1
 k8s.io/api/admission/v1
 k8s.io/api/admissionregistration/v1beta1
 k8s.io/api/auditregistration/v1alpha1
@@ -261,38 +265,38 @@ k8s.io/api/authorization/v1beta1
 k8s.io/api/authorization/v1
 # k8s.io/apimachinery v0.0.0 => k8s.io/apimachinery v0.0.0-20190913080033-27d36303b655
 k8s.io/apimachinery/pkg/runtime/schema
-k8s.io/apimachinery/pkg/apis/meta/v1
+k8s.io/apimachinery/pkg/api/resource
+k8s.io/apimachinery/pkg/labels
 k8s.io/apimachinery/pkg/runtime
+k8s.io/apimachinery/pkg/apis/meta/v1
 k8s.io/apimachinery/pkg/types
 k8s.io/apimachinery/pkg/api/errors
 k8s.io/apimachinery/pkg/runtime/serializer/streaming
 k8s.io/apimachinery/pkg/util/net
 k8s.io/apimachinery/pkg/util/sets
 k8s.io/apimachinery/pkg/watch
-k8s.io/apimachinery/pkg/labels
-k8s.io/apimachinery/pkg/api/resource
-k8s.io/apimachinery/pkg/apis/meta/internalversion
 k8s.io/apimachinery/pkg/util/intstr
-k8s.io/apimachinery/pkg/conversion
-k8s.io/apimachinery/pkg/fields
 k8s.io/apimachinery/pkg/selection
+k8s.io/apimachinery/pkg/util/validation
+k8s.io/apimachinery/pkg/conversion
+k8s.io/apimachinery/pkg/conversion/queryparams
+k8s.io/apimachinery/pkg/util/errors
+k8s.io/apimachinery/pkg/util/json
+k8s.io/apimachinery/pkg/util/naming
 k8s.io/apimachinery/pkg/util/runtime
+k8s.io/apimachinery/pkg/apis/meta/internalversion
+k8s.io/apimachinery/pkg/fields
 k8s.io/apimachinery/pkg/runtime/serializer
 k8s.io/apimachinery/pkg/version
 k8s.io/apimachinery/pkg/api/meta
 k8s.io/apimachinery/pkg/util/clock
-k8s.io/apimachinery/pkg/util/errors
-k8s.io/apimachinery/pkg/util/validation
 k8s.io/apimachinery/pkg/util/waitgroup
 k8s.io/apimachinery/pkg/util/wait
-k8s.io/apimachinery/pkg/conversion/queryparams
-k8s.io/apimachinery/pkg/util/json
-k8s.io/apimachinery/pkg/util/naming
 k8s.io/apimachinery/pkg/util/validation/field
+k8s.io/apimachinery/third_party/forked/golang/reflect
 k8s.io/apimachinery/pkg/util/cache
 k8s.io/apimachinery/pkg/util/diff
 k8s.io/apimachinery/pkg/apis/meta/v1beta1
-k8s.io/apimachinery/third_party/forked/golang/reflect
 k8s.io/apimachinery/pkg/runtime/serializer/json
 k8s.io/apimachinery/pkg/runtime/serializer/protobuf
 k8s.io/apimachinery/pkg/runtime/serializer/recognizer
