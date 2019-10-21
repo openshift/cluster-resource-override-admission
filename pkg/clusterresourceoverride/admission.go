@@ -2,9 +2,12 @@ package clusterresourceoverride
 
 import (
 	"errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/labels"
 
 	admissionresponse "github.com/openshift/cluster-resource-override-admission/pkg/response"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/klog"
@@ -45,7 +48,9 @@ var (
 )
 
 type clusterResourceOverrideAdmission struct {
+	config            *Config
 	nsLister corev1listers.NamespaceLister
+	limitRangesLister corev1listers.LimitRangeLister
 }
 
 func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1beta1.AdmissionRequest) bool {
@@ -93,5 +98,76 @@ func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1beta1.Ad
 }
 
 func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse {
-	return nil
+	pod, ok := request.Object.Object.(*coreapi.Pod)
+	if !ok {
+		return admissionresponse.WithBadRequest(request, BadRequestErr)
+	}
+
+	namespaceLimits := []*corev1.LimitRange{}
+
+	if p.limitRangesLister != nil {
+		limits, err := p.limitRangesLister.LimitRanges(request.Namespace).List(labels.Everything())
+		if err != nil {
+			return admissionresponse.WithForbidden(request, err)
+		}
+		namespaceLimits = limits
+	}
+
+	// Don't mutate resource requirements below the namespace
+	// limit minimums.
+	nsCPUFloor := minResourceLimits(namespaceLimits, corev1.ResourceCPU)
+	nsMemFloor := minResourceLimits(namespaceLimits, corev1.ResourceMemory)
+
+	klog.V(5).Infof("%s: initial pod limits are: %#v", PluginName, pod.Spec)
+
+	mutator := newMutator(p.config, nsCPUFloor, nsMemFloor)
+	current, err := mutator.Mutate(pod)
+	if err != nil {
+		return admissionresponse.WithInternalServerError(request, err)
+	}
+
+	klog.V(5).Infof("%s: pod limits after overrides are: %#v", PluginName, current.Spec)
+
+	patch, patchErr := Patch(request.Object, current)
+	if patchErr != nil {
+		return admissionresponse.WithInternalServerError(request, patchErr)
+	}
+
+	return admissionresponse.WithPatch(request, patch)
+}
+
+// minResourceLimits finds the Min limit for resourceName. Nil is
+// returned if limitRanges is empty or limits contains no resourceName
+// limits.
+func minResourceLimits(limitRanges []*corev1.LimitRange, resourceName corev1.ResourceName) *resource.Quantity {
+	limits := []*resource.Quantity{}
+
+	for _, limitRange := range limitRanges {
+		for _, limit := range limitRange.Spec.Limits {
+			if limit.Type == corev1.LimitTypeContainer {
+				if limit, found := limit.Min[resourceName]; found {
+					clone := limit.DeepCopy()
+					limits = append(limits, &clone)
+				}
+			}
+		}
+	}
+
+	if len(limits) == 0 {
+		return nil
+	}
+
+	return minQuantity(limits)
+}
+
+func minQuantity(quantities []*resource.Quantity) *resource.Quantity {
+	min := quantities[0].DeepCopy()
+
+	for i := range quantities {
+		if quantities[i].Cmp(min) < 0 {
+			min = quantities[i].DeepCopy()
+		}
+	}
+
+	return &min
 }

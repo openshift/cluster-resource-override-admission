@@ -52,3 +52,19 @@ func WithForbidden(request *admissionv1beta1.AdmissionRequest, err error) *admis
 		},
 	}
 }
+
+func WithPatch(request *admissionv1beta1.AdmissionRequest, patch []byte) *admissionv1beta1.AdmissionResponse {
+	response := &admissionv1beta1.AdmissionResponse{
+		UID:     request.UID,
+		Allowed: true,
+	}
+
+	if patch != nil {
+		patchType := admissionv1beta1.PatchTypeJSONPatch
+
+		response.Patch = patch
+		response.PatchType = &patchType
+	}
+
+	return response
+}
