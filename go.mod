@@ -5,6 +5,7 @@ go 1.12
 require (
 	github.com/imdario/mergo v0.3.8 // indirect
 	github.com/openshift/generic-admission-server v1.14.0
+	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.0.1
 	k8s.io/api v0.0.0
 	k8s.io/apimachinery v0.0.0

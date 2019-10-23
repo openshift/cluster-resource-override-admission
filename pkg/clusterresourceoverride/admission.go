@@ -2,6 +2,7 @@ package clusterresourceoverride
 
 import (
 	"errors"
+	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -22,7 +23,7 @@ const (
 	PluginName                        = "autoscaling.openshift.io/ClusterResourceOverride"
 	clusterResourceOverrideAnnotation = "autoscaling.openshift.io/cluster-resource-override-enabled"
 	defaultResyncPeriod               = 5 * time.Hour
-	inClusterConfigFilePath           = "/configuration/cluster-resource-override.yaml"
+	inClusterConfigFilePath           = "/var/cluster-resource-override.yaml"
 )
 
 // ConfigLoaderFunc loads a Config object from appropriate source and returns it.
@@ -32,6 +33,11 @@ type ConfigLoaderFunc func() (config *Config, err error)
 // to be consumed in cluster.
 func NewInClusterAdmission(kubeClientConfig *restclient.Config) (admission Admission, err error) {
 	configLoader := func() (config *Config, err error) {
+		configPath := os.Getenv("CONFIGURATION_PATH")
+		if configPath == "" {
+			configPath = inClusterConfigFilePath
+		}
+
 		externalConfig, err := DecodeWithFile(inClusterConfigFilePath)
 		if err != nil {
 			return

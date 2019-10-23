@@ -1,0 +1,8 @@
+FROM fedora
+
+ADD deploy/configuration.yaml /var/cluster-resource-override.yaml
+ADD bin/cluster-resource-override-admission-server /usr/bin
+
+ENV CONFIGURATION_PATH=/var/cluster-resource-override.yaml
+
+ENTRYPOINT ["/usr/bin/cluster-resource-override-admission-server"]
