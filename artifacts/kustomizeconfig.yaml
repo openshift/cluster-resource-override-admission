@@ -1,16 +1,4 @@
 varReference:
-  - path: subjects/namespace
-    kind: ClusterRoleBinding
-  - path: subjects/namespace
-    kind: RoleBinding
-  - path: metadata.namespace
-    kind: Deployment
-  - path: metadata.namespace
-    kind: ServiceAccount
-  - path: metadata.namespace
-    kind: Secret
-  - path: metadata.namespace
-    kind: Service
   - path: spec/caBundle
     kind: APIService
   - path: data/tls.crt
@@ -18,4 +6,4 @@ varReference:
   - path: data/tls.key
     kind: Secret
   - path: webhooks/clientConfig/caBundle
-    kind: ValidatingWebhookConfiguration
+    kind: MutatingWebhookConfiguration

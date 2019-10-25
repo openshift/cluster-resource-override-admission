@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"k8s.io/klog"
 	"sync"
 
 	"github.com/openshift/generic-admission-server/pkg/cmd"
@@ -36,12 +37,16 @@ func (m *mutatingHook) Initialize(kubeClientConfig *restclient.Config, stopCh <-
 		return nil
 	}
 
-	admission, err := clusterresourceoverride.NewInClusterAdmission(kubeClientConfig)
+	admission, err := clusterresourceoverride.NewInClusterAdmission(kubeClientConfig, stopCh)
 	if err != nil {
 		return err
 	}
 
 	m.admission = admission
+
+	klog.V(5).Infof("%s loaded successfully", clusterresourceoverride.PluginName)
+	klog.V(5).Infof("configuration=%s", admission.GetConfiguration())
+
 	return nil
 }
 
@@ -50,9 +55,9 @@ func (m *mutatingHook) Initialize(kubeClientConfig *restclient.Config, stopCh <-
 // Note: this is (usually) not the same as the payload resource!
 func (m *mutatingHook) MutatingResource() (plural schema.GroupVersionResource, singular string) {
 	return schema.GroupVersionResource{
-			Group:    "autoscaling.openshift.io",
+			Group:    "admission.autoscaling.openshift.io",
 			Version:  "v1",
-			Resource: "clusterresourceoverride",
+			Resource: "clusterresourceoverrides",
 		},
 		"clusterresourceoverride"
 }

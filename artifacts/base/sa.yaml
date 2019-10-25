@@ -1,6 +1,0 @@
-# to be able to assign powers to the process
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  namespace: cluster-resource-override
-  name: server

@@ -1,12 +1,14 @@
 package clusterresourceoverride
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/client-go/tools/cache"
 	"os"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 
@@ -16,7 +18,6 @@ import (
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/klog"
-	coreapi "k8s.io/kubernetes/pkg/apis/core"
 )
 
 const (
@@ -26,12 +27,21 @@ const (
 	inClusterConfigFilePath           = "/var/cluster-resource-override.yaml"
 )
 
+const (
+	cpuBaseScaleFactor = 1000.0 / (1024.0 * 1024.0 * 1024.0) // 1000 milliCores per 1GiB
+)
+
+var (
+	defaultCPUFloor    = resource.MustParse("1m")
+	defaultMemoryFloor = resource.MustParse("1Mi")
+)
+
 // ConfigLoaderFunc loads a Config object from appropriate source and returns it.
 type ConfigLoaderFunc func() (config *Config, err error)
 
 // NewInClusterAdmission returns a new instance of Admission that is appropriate
 // to be consumed in cluster.
-func NewInClusterAdmission(kubeClientConfig *restclient.Config) (admission Admission, err error) {
+func NewInClusterAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}) (admission Admission, err error) {
 	configLoader := func() (config *Config, err error) {
 		configPath := os.Getenv("CONFIGURATION_PATH")
 		if configPath == "" {
@@ -43,16 +53,16 @@ func NewInClusterAdmission(kubeClientConfig *restclient.Config) (admission Admis
 			return
 		}
 
-		config = Convert(externalConfig)
+		config = ConvertExternalConfig(externalConfig)
 		return
 	}
 
-	return NewAdmission(kubeClientConfig, configLoader)
+	return NewAdmission(kubeClientConfig, stopCh, configLoader)
 }
 
 // NewInClusterAdmission returns a new instance of Admission that is appropriate
 // to be consumed in cluster.
-func NewAdmission(kubeClientConfig *restclient.Config, configLoaderFunc ConfigLoaderFunc) (admission Admission, err error) {
+func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, configLoaderFunc ConfigLoaderFunc) (admission Admission, err error) {
 	config, err := configLoaderFunc()
 	if err != nil {
 		return
@@ -64,20 +74,54 @@ func NewAdmission(kubeClientConfig *restclient.Config, configLoaderFunc ConfigLo
 	}
 
 	factory := informers.NewSharedInformerFactory(client, defaultResyncPeriod)
+	informer := factory.Core().V1().Namespaces()
+	nsLister := informer.Lister()
+
+	nsInformer := informer.Informer()
+	go nsInformer.Run(stopCh)
+	if !cache.WaitForCacheSync(stopCh, nsInformer.HasSynced) {
+		err = fmt.Errorf("%s failed to wait for cache to sync", PluginName)
+		klog.V(5).Info(err.Error())
+	}
+
 	limitRangesLister := factory.Core().V1().LimitRanges().Lister()
-	nsLister := factory.Core().V1().Namespaces().Lister()
 
 	admission = &clusterResourceOverrideAdmission{
-		config:            config,
-		nsLister:          nsLister,
-		limitRangesLister: limitRangesLister,
+		config:   config,
+		nsLister: nsLister,
+		limitQuerier: &namespaceLimitQuerier{
+			limitRangesLister: limitRangesLister,
+		},
 	}
 
 	return
 }
 
+func setNamespaceFloor(nsMinimum *Floor) *Floor {
+	target := &Floor{
+		Memory: &defaultMemoryFloor,
+		CPU:    &defaultCPUFloor,
+	}
+
+	// floor associated with a namespace has higher precedence.
+	if nsMinimum != nil {
+		if nsMinimum.Memory != nil {
+			target.Memory = nsMinimum.Memory
+		}
+
+		if nsMinimum.CPU != nil {
+			target.CPU = nsMinimum.CPU
+		}
+	}
+
+	return target
+}
+
 // Admission interface encapsulates the admission logic for ClusterResourceOverride plugin.
 type Admission interface {
+	// GetConfiguration returns the configuration in use by the admission logic.
+	GetConfiguration() *Config
+
 	// IsApplicable returns true if the given resource inside the request is
 	// applicable to this admission controller. Otherwise it returns false.
 	IsApplicable(request *admissionv1beta1.AdmissionRequest) bool
@@ -99,13 +143,17 @@ var (
 )
 
 type clusterResourceOverrideAdmission struct {
-	config            *Config
-	nsLister          corev1listers.NamespaceLister
-	limitRangesLister corev1listers.LimitRangeLister
+	config       *Config
+	nsLister     corev1listers.NamespaceLister
+	limitQuerier *namespaceLimitQuerier
+}
+
+func (p *clusterResourceOverrideAdmission) GetConfiguration() *Config {
+	return p.config
 }
 
 func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1beta1.AdmissionRequest) bool {
-	if request.Resource.Resource == string(coreapi.ResourcePods) &&
+	if request.Resource.Resource == string(corev1.ResourcePods) &&
 		request.SubResource == "" &&
 		(request.Operation == admissionv1beta1.Create || request.Operation == admissionv1beta1.Update) {
 
@@ -116,9 +164,11 @@ func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1beta
 }
 
 func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1beta1.AdmissionRequest) (exempt bool, response *admissionv1beta1.AdmissionResponse) {
-	pod, ok := request.Object.Object.(*coreapi.Pod)
-	if !ok {
-		response = admissionresponse.WithBadRequest(request, BadRequestErr)
+	klog.V(5).Infof("%s - checking if the resource is exempt", request.Namespace)
+
+	pod, err := getPod(request)
+	if err != nil {
+		response = admissionresponse.WithBadRequest(request, err)
 		return
 	}
 
@@ -139,7 +189,7 @@ func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1beta1.Ad
 		return
 	}
 
-	if isExemptedNamespace(ns.Name) {
+	if IsNamespaceExempt(ns.Name) {
 		klog.V(5).Infof("%s is skipping exempted project %s", PluginName, request.Namespace)
 		exempt = true // project is exempted, do nothing
 		return
@@ -149,29 +199,27 @@ func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1beta1.Ad
 }
 
 func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse {
-	pod, ok := request.Object.Object.(*coreapi.Pod)
-	if !ok {
-		return admissionresponse.WithBadRequest(request, BadRequestErr)
-	}
+	klog.V(5).Infof("%s - admitting resource", request.Namespace)
 
-	namespaceLimits := []*corev1.LimitRange{}
-
-	if p.limitRangesLister != nil {
-		limits, err := p.limitRangesLister.LimitRanges(request.Namespace).List(labels.Everything())
-		if err != nil {
-			return admissionresponse.WithForbidden(request, err)
-		}
-		namespaceLimits = limits
+	pod, err := getPod(request)
+	if err != nil {
+		return admissionresponse.WithBadRequest(request, err)
 	}
 
 	// Don't mutate resource requirements below the namespace
 	// limit minimums.
-	nsCPUFloor := minResourceLimits(namespaceLimits, corev1.ResourceCPU)
-	nsMemFloor := minResourceLimits(namespaceLimits, corev1.ResourceMemory)
+	nsMinimum, err := p.limitQuerier.QueryMinimum(request.Namespace)
+	if err != nil {
+		return admissionresponse.WithForbidden(request, err)
+	}
 
 	klog.V(5).Infof("%s: initial pod limits are: %#v", PluginName, pod.Spec)
 
-	mutator := newMutator(p.config, nsCPUFloor, nsMemFloor)
+	mutator, err := NewMutator(p.config, setNamespaceFloor(nsMinimum), cpuBaseScaleFactor)
+	if err != nil {
+		return admissionresponse.WithInternalServerError(request, err)
+	}
+
 	current, err := mutator.Mutate(pod)
 	if err != nil {
 		return admissionresponse.WithInternalServerError(request, err)
@@ -187,38 +235,8 @@ func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.Admis
 	return admissionresponse.WithPatch(request, patch)
 }
 
-// minResourceLimits finds the Min limit for resourceName. Nil is
-// returned if limitRanges is empty or limits contains no resourceName
-// limits.
-func minResourceLimits(limitRanges []*corev1.LimitRange, resourceName corev1.ResourceName) *resource.Quantity {
-	limits := []*resource.Quantity{}
-
-	for _, limitRange := range limitRanges {
-		for _, limit := range limitRange.Spec.Limits {
-			if limit.Type == corev1.LimitTypeContainer {
-				if limit, found := limit.Min[resourceName]; found {
-					clone := limit.DeepCopy()
-					limits = append(limits, &clone)
-				}
-			}
-		}
-	}
-
-	if len(limits) == 0 {
-		return nil
-	}
-
-	return minQuantity(limits)
-}
-
-func minQuantity(quantities []*resource.Quantity) *resource.Quantity {
-	min := quantities[0].DeepCopy()
-
-	for i := range quantities {
-		if quantities[i].Cmp(min) < 0 {
-			min = quantities[i].DeepCopy()
-		}
-	}
-
-	return &min
+func getPod(request *admissionv1beta1.AdmissionRequest) (pod *corev1.Pod, err error) {
+	pod = &corev1.Pod{}
+	err = json.Unmarshal(request.Object.Raw, pod)
+	return
 }

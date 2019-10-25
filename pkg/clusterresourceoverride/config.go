@@ -36,7 +36,12 @@ type Config struct {
 	MemoryRequestToLimitRatio float64
 }
 
-func Convert(config *ClusterResourceOverrideConfig) *Config {
+func (c *Config) String() string {
+	return fmt.Sprintf("LimitCPUToMemoryRatio=%f CpuRequestToLimitRatio=%f MemoryRequestToLimitRatio=%f",
+		c.LimitCPUToMemoryRatio, c.CpuRequestToLimitRatio, c.MemoryRequestToLimitRatio)
+}
+
+func ConvertExternalConfig(config *ClusterResourceOverrideConfig) *Config {
 	return &Config{
 		LimitCPUToMemoryRatio:     float64(config.LimitCPUToMemoryPercent) / 100,
 		CpuRequestToLimitRatio:    float64(config.CPURequestToLimitPercent) / 100,

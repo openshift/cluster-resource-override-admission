@@ -5,13 +5,17 @@ go 1.12
 require (
 	github.com/imdario/mergo v0.3.8 // indirect
 	github.com/openshift/generic-admission-server v1.14.0
+	github.com/spf13/cobra v0.0.5 // indirect
+	github.com/stretchr/testify v1.4.0
 	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.0.1
+	gopkg.in/yaml.v2 v2.2.4 // indirect
 	k8s.io/api v0.0.0
 	k8s.io/apimachinery v0.0.0
+	k8s.io/apiserver v0.0.0 // indirect
 	k8s.io/client-go v11.0.0+incompatible
+	k8s.io/component-base v0.0.0 // indirect
 	k8s.io/klog v0.4.0
-	k8s.io/kubernetes v1.16.2
 )
 
 replace (

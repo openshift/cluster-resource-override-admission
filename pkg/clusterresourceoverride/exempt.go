@@ -10,7 +10,7 @@ var (
 	forbiddenPrefixes = []string{"openshift-", "kubernetes-", "kube-"}
 )
 
-func isExemptedNamespace(name string) bool {
+func IsNamespaceExempt(name string) bool {
 	for _, s := range forbiddenNames {
 		if name == s {
 			return true

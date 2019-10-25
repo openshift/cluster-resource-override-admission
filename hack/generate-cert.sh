@@ -78,7 +78,7 @@ kind: ConfigMap
 metadata:
   namespace: default
   name: certs
-spec:
+data:
   kubeCa: ${KUBE_CA}
   tlsServingKey: ${TLS_SERVING_KEY}
   tlsServingCert: ${TLS_SERVING_CERT}

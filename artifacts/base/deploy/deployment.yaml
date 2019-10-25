@@ -1,0 +1,44 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  namespace: cluster-resource-override
+  name: clusterresourceoverride
+  labels:
+    clusterresourceoverride: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      clusterresourceoverride: "true"
+  template:
+    metadata:
+      name: clusterresourceoverride
+      labels:
+        clusterresourceoverride: "true"
+    spec:
+      serviceAccountName: clusterresourceoverride
+      containers:
+        - name: clusterresourceoverride
+          image: docker.io/tohinkashem/clusterresourceoverride:dev
+          imagePullPolicy: Always
+          args:
+            - "--secure-port=8443"
+            - "--audit-log-path=-"
+            - "--tls-cert-file=/var/serving-cert/tls.crt"
+            - "--tls-private-key-file=/var/serving-cert/tls.key"
+            - "--v=8"
+          ports:
+            - containerPort: 8443
+          volumeMounts:
+            - mountPath: /var/serving-cert
+              name: serving-cert
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+      volumes:
+        - name: serving-cert
+          secret:
+            defaultMode: 420
+            secretName: server-serving-cert
