@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	restclient "k8s.io/client-go/rest"
 
+	"github.com/openshift/cluster-resource-override-admission/pkg/clusterresourceoverride"
 	admissionresponse "github.com/openshift/cluster-resource-override-admission/pkg/response"
 )
 
@@ -21,6 +22,8 @@ func main() {
 type mutatingHook struct {
 	lock        sync.RWMutex
 	initialized bool
+
+	admission clusterresourceoverride.Admission
 }
 
 // Initialize is called as a post-start hook
@@ -35,7 +38,15 @@ func (m *mutatingHook) Initialize(kubeClientConfig *restclient.Config, stopCh <-
 		return nil
 	}
 
-	klog.V(5).Info("loaded successfully")
+	admission, err := clusterresourceoverride.NewInClusterAdmission(kubeClientConfig, stopCh)
+	if err != nil {
+		return err
+	}
+
+	m.admission = admission
+
+	klog.V(1).Info("loaded successfully")
+	klog.V(1).Infof("configuration=%s", admission.GetConfiguration())
 
 	return nil
 }
@@ -62,5 +73,19 @@ func (m *mutatingHook) Admit(request *admissionv1beta1.AdmissionRequest) *admiss
 		return admissionresponse.WithInternalServerError(request, errors.New("not initialized"))
 	}
 
-	return admissionresponse.WithAllowed(request)
+	if !m.admission.IsApplicable(request) {
+		return admissionresponse.WithAllowed(request)
+	}
+
+	exempt, response := m.admission.IsExempt(request)
+	if response != nil {
+		return response
+	}
+
+	if exempt {
+		// disabled for this project, do nothing
+		return admissionresponse.WithAllowed(request)
+	}
+
+	return m.admission.Admit(request)
 }

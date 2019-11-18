@@ -9,6 +9,7 @@ require (
 	github.com/spf13/cobra v0.0.5 // indirect
 	github.com/stretchr/testify v1.4.0
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
+	gomodules.xyz/jsonpatch/v2 v2.0.1
 	k8s.io/api v0.0.0-20191112020540-7f9008e52f64
 	k8s.io/apimachinery v0.0.0-20190913080033-27d36303b655
 	k8s.io/apiserver v0.0.0-20191111062045-707298a79a53 // indirect
