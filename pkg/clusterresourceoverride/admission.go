@@ -3,6 +3,7 @@ package clusterresourceoverride
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -23,7 +24,7 @@ import (
 const (
 	clusterResourceOverrideAnnotation = "autoscaling.openshift.io/cluster-resource-override-enabled"
 	defaultResyncPeriod               = 5 * time.Hour
-	inClusterConfigFilePath           = "/var/cluster-resource-override.yaml"
+	configurationEnvName 			  = "CONFIGURATION_PATH"
 )
 
 const (
@@ -63,13 +64,15 @@ type Admission interface {
 // to be consumed in cluster.
 func NewInClusterAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}) (admission Admission, err error) {
 	configLoader := func() (config *Config, err error) {
-		configPath := os.Getenv("CONFIGURATION_PATH")
+		configPath := os.Getenv(configurationEnvName)
 		if configPath == "" {
-			configPath = inClusterConfigFilePath
+			err = fmt.Errorf("no configuration file specified, env var %s is not set", configurationEnvName)
+			return
 		}
 
-		externalConfig, err := DecodeWithFile(inClusterConfigFilePath)
-		if err != nil {
+		externalConfig, decodeErr := DecodeWithFile(configPath)
+		if decodeErr != nil {
+			err = fmt.Errorf("file=%s failed to decode configuration - %s", configPath, decodeErr.Error())
 			return
 		}
 
@@ -83,13 +86,15 @@ func NewInClusterAdmission(kubeClientConfig *restclient.Config, stopCh <-chan st
 // NewInClusterAdmission returns a new instance of Admission that is appropriate
 // to be consumed in cluster.
 func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, configLoaderFunc ConfigLoaderFunc) (admission Admission, err error) {
-	config, err := configLoaderFunc()
-	if err != nil {
+	config, configLoadErr := configLoaderFunc()
+	if configLoadErr != nil {
+		err = fmt.Errorf("failed to load configuration - %s", configLoadErr.Error())
 		return
 	}
 
-	client, err := kubernetes.NewForConfig(kubeClientConfig)
-	if err != nil {
+	client, clientErr := kubernetes.NewForConfig(kubeClientConfig)
+	if clientErr != nil {
+		err = fmt.Errorf("failed to load configuration - %s", clientErr.Error())
 		return
 	}
 

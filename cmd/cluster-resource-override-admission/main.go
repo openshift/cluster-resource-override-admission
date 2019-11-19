@@ -28,6 +28,8 @@ type mutatingHook struct {
 
 // Initialize is called as a post-start hook
 func (m *mutatingHook) Initialize(kubeClientConfig *restclient.Config, stopCh <-chan struct{}) error {
+	klog.V(1).Info("initializing ClusterResourceOverride admission webhook")
+
 	m.lock.Lock()
 	defer func() {
 		m.initialized = true
@@ -40,12 +42,13 @@ func (m *mutatingHook) Initialize(kubeClientConfig *restclient.Config, stopCh <-
 
 	admission, err := clusterresourceoverride.NewInClusterAdmission(kubeClientConfig, stopCh)
 	if err != nil {
+		klog.V(1).Infof("failed to initialize - %s", err.Error())
 		return err
 	}
 
 	m.admission = admission
 
-	klog.V(1).Info("loaded successfully")
+	klog.V(1).Info("ClusterResourceOverride admission webhook loaded successfully")
 	klog.V(1).Infof("configuration=%s", admission.GetConfiguration())
 
 	return nil
@@ -56,10 +59,10 @@ func (m *mutatingHook) Initialize(kubeClientConfig *restclient.Config, stopCh <-
 // Note: this is (usually) not the same as the payload resource!
 func (m *mutatingHook) MutatingResource() (plural schema.GroupVersionResource, singular string) {
 	return schema.GroupVersionResource{
-			Group:    "admission.autoscaling.openshift.io",
-			Version:  "v1",
-			Resource: "clusterresourceoverrides",
-		},
+		Group:    "admission.autoscaling.openshift.io",
+		Version:  "v1",
+		Resource: "clusterresourceoverrides",
+	},
 		"clusterresourceoverride"
 }
 
