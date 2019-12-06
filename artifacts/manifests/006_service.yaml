@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: clusterresourceoverride
+  namespace: cluster-resource-override
+  labels:
+    clusterresourceoverride: "true"
+spec:
+  selector:
+    clusterresourceoverride: "true"
+  ports:
+    - port: 443
+      targetPort: 8443
