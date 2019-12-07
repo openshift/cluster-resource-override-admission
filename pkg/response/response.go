@@ -26,3 +26,45 @@ func WithAllowed(request *admissionv1beta1.AdmissionRequest) *admissionv1beta1.A
 		Allowed: true,
 	}
 }
+
+func WithBadRequest(request *admissionv1beta1.AdmissionRequest, err error) *admissionv1beta1.AdmissionResponse {
+	return &admissionv1beta1.AdmissionResponse{
+		UID:     request.UID,
+		Allowed: false,
+		Result: &metav1.Status{
+			Status:  metav1.StatusFailure,
+			Code:    http.StatusBadRequest,
+			Reason:  metav1.StatusReasonBadRequest,
+			Message: err.Error(),
+		},
+	}
+}
+
+func WithForbidden(request *admissionv1beta1.AdmissionRequest, err error) *admissionv1beta1.AdmissionResponse {
+	return &admissionv1beta1.AdmissionResponse{
+		UID:     request.UID,
+		Allowed: false,
+		Result: &metav1.Status{
+			Status:  metav1.StatusFailure,
+			Code:    http.StatusForbidden,
+			Reason:  metav1.StatusReasonForbidden,
+			Message: err.Error(),
+		},
+	}
+}
+
+func WithPatch(request *admissionv1beta1.AdmissionRequest, patch []byte) *admissionv1beta1.AdmissionResponse {
+	response := &admissionv1beta1.AdmissionResponse{
+		UID:     request.UID,
+		Allowed: true,
+	}
+
+	if patch != nil {
+		patchType := admissionv1beta1.PatchTypeJSONPatch
+
+		response.Patch = patch
+		response.PatchType = &patchType
+	}
+
+	return response
+}
