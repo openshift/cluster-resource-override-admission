@@ -29,10 +29,10 @@ make build
 
 Build and push image:
 ```bash
-# make local-image IMAGE_REGISTRY={url to repository} IMAGE_TAG={tag}
-make local-image IMAGE_REGISTRY=docker.io/redhat/clusterresourceoverride IMAGE_TAG=dev
+# make local-image LOCAL_IMAGE_REGISTRY={url to repository} IMAGE_TAG={tag}
+make local-image LOCAL_IMAGE_REGISTRY=docker.io/redhat/clusterresourceoverride IMAGE_TAG=dev
 
-make local-push IMAGE_REGISTRY=docker.io/redhat/clusterresourceoverride IMAGE_TAG=dev
+make local-push LOCAL_IMAGE_REGISTRY=docker.io/redhat/clusterresourceoverride IMAGE_TAG=dev
 ```
 
 #### Deploy
