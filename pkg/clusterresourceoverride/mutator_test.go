@@ -32,7 +32,7 @@ func TestMutator_Mutate(t *testing.T) {
 	pod := &corev1.Pod{
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
-				corev1.Container{
+				{
 					Name: "db",
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
@@ -41,7 +41,7 @@ func TestMutator_Mutate(t *testing.T) {
 						},
 					},
 				},
-				corev1.Container{
+				{
 					Name: "app",
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
@@ -52,7 +52,7 @@ func TestMutator_Mutate(t *testing.T) {
 				},
 			},
 			InitContainers: []corev1.Container{
-				corev1.Container{
+				{
 					Name: "init",
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{

@@ -17,7 +17,7 @@ func TestMutatingHook_MutatingResource(t *testing.T) {
 	}
 	singularWant := "clusterresourceoverride"
 
-	var hook apiserver.MutatingAdmissionHook = &mutatingHook{}
+	var hook apiserver.MutatingAdmissionHook = &clusterResourceOverrideHook{}
 
 	pluralGot, singularGot := hook.MutatingResource()
 
