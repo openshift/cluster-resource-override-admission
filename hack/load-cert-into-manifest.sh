@@ -16,13 +16,7 @@ if [ "${MANIFEST_SECRET_YAML}" == "" ]; then
   exit 1
 fi
 
-MANIFEST_APISERVICE_YAML=$3
-if [ "${MANIFEST_APISERVICE_YAML}" == "" ]; then
-  echo "Must specify a path to the yaml file for APIService object"
-  exit 1
-fi
-
-MANIFEST_MUTATING_WEBHOOK_YAML=$4
+MANIFEST_MUTATING_WEBHOOK_YAML=$3
 if [ "${MANIFEST_MUTATING_WEBHOOK_YAML}" == "" ]; then
   echo "Must specify a path to the yaml file for MutatingWebhookConfiguration object"
   exit 1
@@ -35,6 +29,4 @@ SERVICE_SERVING_CERT_CA=$(cat ${CERT_FILE_PATH} | jq '."service.serving.cert.ca"
 
 sed "s/TLS_SERVING_CERT/${TLS_SERVING_CERT}/g" -i "${MANIFEST_SECRET_YAML}"
 sed "s/TLS_SERVING_KEY/${TLS_SERVING_KEY}/g" -i "${MANIFEST_SECRET_YAML}"
-
-sed "s/SERVICE_SERVING_CERT_CA/${SERVICE_SERVING_CERT_CA}/g" -i "${MANIFEST_APISERVICE_YAML}"
-sed "s/KUBE_CA/${KUBE_CA}/g" -i "${MANIFEST_MUTATING_WEBHOOK_YAML}"
+sed "s/SERVICE_SERVING_CERT_CA/${SERVICE_SERVING_CERT_CA}/g" -i "${MANIFEST_MUTATING_WEBHOOK_YAML}"

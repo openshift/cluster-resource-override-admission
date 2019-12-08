@@ -1,12 +1,11 @@
-apiVersion: extensions/v1beta1
-kind: Deployment
+apiVersion: apps/v1
+kind: DaemonSet
 metadata:
   namespace: cluster-resource-override
   name: clusterresourceoverride
   labels:
     clusterresourceoverride: "true"
 spec:
-  replicas: 1
   selector:
     matchLabels:
       clusterresourceoverride: "true"
@@ -16,13 +15,17 @@ spec:
       labels:
         clusterresourceoverride: "true"
     spec:
+      nodeSelector:
+        node-role.kubernetes.io/master: ''
+      hostNetwork: true
       serviceAccountName: clusterresourceoverride
       containers:
         - name: clusterresourceoverride
           image: docker.io/tohinkashem/clusterresourceoverride:dev
           imagePullPolicy: Always
           args:
-            - "--secure-port=8443"
+            - "--secure-port=9400"
+            - "--bind-address=127.0.0.1"
             - "--audit-log-path=-"
             - "--tls-cert-file=/var/serving-cert/tls.crt"
             - "--tls-private-key-file=/var/serving-cert/tls.key"
@@ -31,17 +34,31 @@ spec:
             - name: CONFIGURATION_PATH
               value: /etc/clusterresourceoverride/config/override.yaml
           ports:
-            - containerPort: 8443
+            - containerPort: 9400
+              hostPort: 9400
+              protocol: TCP
           volumeMounts:
             - mountPath: /var/serving-cert
               name: serving-cert
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 8443
+              port: 9400
               scheme: HTTPS
       volumes:
         - name: serving-cert
           secret:
             defaultMode: 420
             secretName: server-serving-cert
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 120
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 120

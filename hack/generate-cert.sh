@@ -65,11 +65,11 @@ mkdir -p "${CERT_DIR}"
 kube::util::create_signing_certkey "" "${CERT_DIR}" serving '"server auth"'
 
 # create webhook server key and cert
-kube::util::create_serving_certkey "" "${CERT_DIR}" "serving-ca" clusterresourceoverride.cluster-resource-override.svc "clusterresourceoverride.cluster-resource-override.svc" "clusterresourceoverride.cluster-resource-override.svc"
+kube::util::create_serving_certkey "" "${CERT_DIR}" "serving-ca" localhost "localhost" "localhost"
 
 KUBE_CA=$(kubectl config view --minify=true --flatten -o json | jq '.clusters[0].cluster."certificate-authority-data"' -r)
-TLS_SERVING_CERT=$(base64 ${CERT_DIR}/serving-clusterresourceoverride.cluster-resource-override.svc.crt | tr -d '\n')
-TLS_SERVING_KEY=$(base64 ${CERT_DIR}/serving-clusterresourceoverride.cluster-resource-override.svc.key | tr -d '\n')
+TLS_SERVING_CERT=$(base64 ${CERT_DIR}/serving-localhost.crt | tr -d '\n')
+TLS_SERVING_KEY=$(base64 ${CERT_DIR}/serving-localhost.key | tr -d '\n')
 SERVICE_SERVING_CERT_CA=$(base64 ${CERT_DIR}/serving-ca.crt | tr -d '\n')
 
 cat <<EOF > ${CERT_FILE_PATH}
