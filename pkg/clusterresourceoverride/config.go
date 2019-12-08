@@ -9,11 +9,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
-// ClusterResourceOverrideConfig is the configuration for the ClusterResourceOverride
+// ClusterResourceOverride is the configuration for the ClusterResourceOverride
 // admission controller which overrides user-provided container request/limit values.
-type ClusterResourceOverrideConfig struct {
+type ClusterResourceOverride struct {
 	metav1.TypeMeta `json:",inline"`
+	Spec            ClusterResourceOverrideSpec `json:"spec,omitempty"`
+}
 
+type ClusterResourceOverrideSpec struct {
 	// For each of the following, if a non-zero ratio is specified then the initial
 	// value (if any) in the pod spec is overwritten according to the ratio.
 	// LimitRange defaults are merged prior to the override.
@@ -41,35 +44,35 @@ func (c *Config) String() string {
 		c.LimitCPUToMemoryRatio, c.CpuRequestToLimitRatio, c.MemoryRequestToLimitRatio)
 }
 
-func ConvertExternalConfig(config *ClusterResourceOverrideConfig) *Config {
+func ConvertExternalConfig(object *ClusterResourceOverride) *Config {
 	return &Config{
-		LimitCPUToMemoryRatio:     float64(config.LimitCPUToMemoryPercent) / 100,
-		CpuRequestToLimitRatio:    float64(config.CPURequestToLimitPercent) / 100,
-		MemoryRequestToLimitRatio: float64(config.MemoryRequestToLimitPercent) / 100,
+		LimitCPUToMemoryRatio:     float64(object.Spec.LimitCPUToMemoryPercent) / 100,
+		CpuRequestToLimitRatio:    float64(object.Spec.CPURequestToLimitPercent) / 100,
+		MemoryRequestToLimitRatio: float64(object.Spec.MemoryRequestToLimitPercent) / 100,
 	}
 }
 
 // DecodeUnstructured decodes a raw stream into a an
 // unstructured.Unstructured instance.
-func Decode(reader io.Reader) (config *ClusterResourceOverrideConfig, err error) {
+func Decode(reader io.Reader) (object *ClusterResourceOverride, err error) {
 	decoder := yaml.NewYAMLOrJSONDecoder(reader, 30)
 
-	c := &ClusterResourceOverrideConfig{}
+	c := &ClusterResourceOverride{}
 	if err = decoder.Decode(c); err != nil {
 		return
 	}
 
-	config = c
+	object = c
 	return
 }
 
-func DecodeWithFile(path string) (config *ClusterResourceOverrideConfig, err error) {
+func DecodeWithFile(path string) (object *ClusterResourceOverride, err error) {
 	reader, openErr := os.Open(path)
 	if err != nil {
 		err = fmt.Errorf("unable to load file %s: %s", path, openErr)
 		return
 	}
 
-	config, err = Decode(reader)
+	object, err = Decode(reader)
 	return
 }

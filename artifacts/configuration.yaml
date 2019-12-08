@@ -1,5 +1,6 @@
 apiVersion: v1
 kind: ClusterResourceOverrideConfig
-memoryRequestToLimitPercent: 50
-cpuRequestToLimitPercent: 25
-limitCPUToMemoryPercent: 200
+spec:
+  memoryRequestToLimitPercent: 50
+  cpuRequestToLimitPercent: 25
+  limitCPUToMemoryPercent: 200
