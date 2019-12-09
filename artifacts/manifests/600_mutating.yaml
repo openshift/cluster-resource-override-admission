@@ -6,13 +6,17 @@ metadata:
     clusterresourceoverride: "true"
 webhooks:
   - name: clusterresourceoverrides.admission.autoscaling.openshift.io
+    namespaceSelector:
+      matchLabels:
+        clusterresourceoverrides.admission.autoscaling.openshift.io/enabled: "true"
+      matchExpressions:
+        - key: runlevel
+          operator: NotIn
+          values: ["0","1"]
+    matchPolicy: Equivalent
     clientConfig:
-      service:
-        # reach the webhook via the registered aggregated API
-        namespace: default
-        name: kubernetes
-        path: /apis/admission.autoscaling.openshift.io/v1/clusterresourceoverrides
-      caBundle: KUBE_CA
+      url: https://localhost:9400/apis/admission.autoscaling.openshift.io/v1/clusterresourceoverrides
+      caBundle: SERVICE_SERVING_CERT_CA
     rules:
       - operations:
           - CREATE
@@ -23,4 +27,7 @@ webhooks:
           - "v1"
         resources:
           - "pods"
+        scope: "Namespaced"
     failurePolicy: Fail
+    timeoutSeconds: 5
+    sideEffects: None

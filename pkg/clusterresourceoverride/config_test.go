@@ -7,10 +7,12 @@ import (
 )
 
 func TestConvertExternalConfig(t *testing.T) {
-	external := &ClusterResourceOverrideConfig{
-		LimitCPUToMemoryPercent:     400,
-		CPURequestToLimitPercent:    25,
-		MemoryRequestToLimitPercent: 50,
+	external := &ClusterResourceOverride{
+		Spec: ClusterResourceOverrideSpec{
+			LimitCPUToMemoryPercent:     400,
+			CPURequestToLimitPercent:    25,
+			MemoryRequestToLimitPercent: 50,
+		},
 	}
 
 	configGot := ConvertExternalConfig(external)
@@ -24,14 +26,18 @@ func TestDecodeWithFile(t *testing.T) {
 	tests := []struct {
 		name   string
 		file   string
-		assert func(t *testing.T, objGot *ClusterResourceOverrideConfig, errGot error)
+		assert func(t *testing.T, objGot *ClusterResourceOverride, errGot error)
 	}{
 		{
 			name: "WithValidObject",
 			file: "testdata/external.yaml",
-			assert: func(t *testing.T, objGot *ClusterResourceOverrideConfig, errGot error) {
+			assert: func(t *testing.T, objGot *ClusterResourceOverride, errGot error) {
 				assert.NoError(t, errGot)
 				assert.NotNil(t, objGot)
+
+				assert.Equal(t, int64(25), objGot.Spec.MemoryRequestToLimitPercent)
+				assert.Equal(t, int64(50), objGot.Spec.CPURequestToLimitPercent)
+				assert.Equal(t, int64(200), objGot.Spec.LimitCPUToMemoryPercent)
 			},
 		},
 	}

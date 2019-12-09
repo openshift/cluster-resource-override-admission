@@ -8,9 +8,8 @@ ARTIFACTS := "./artifacts/manifests"
 OUTPUT_DIR := "./_output"
 MANIFEST_DIR := "$(OUTPUT_DIR)/manifests"
 CERT_FILE_PATH := "$(OUTPUT_DIR)/certs.yaml"
-MANIFEST_SECRET_YAML := "$(MANIFEST_DIR)/004_secret.yaml"
-MANIFEST_APISERVICE_YAML := "$(MANIFEST_DIR)/007_apiservice.yaml"
-MANIFEST_MUTATING_WEBHOOK_YAML := "$(MANIFEST_DIR)/008_mutating.yaml"
+MANIFEST_SECRET_YAML := "$(MANIFEST_DIR)/400_secret.yaml"
+MANIFEST_MUTATING_WEBHOOK_YAML := "$(MANIFEST_DIR)/600_mutating.yaml"
 
 # Include the library makefile
 include $(addprefix ./vendor/github.com/openshift/library-go/alpha-build-machinery/make/, \
@@ -39,5 +38,5 @@ manifests:
 	./hack/generate-cert.sh "$(CERT_FILE_PATH)"
 
 	# load the certs into the manifest yaml.
-	./hack/load-cert-into-manifest.sh "$(CERT_FILE_PATH)" "$(MANIFEST_SECRET_YAML)" "$(MANIFEST_APISERVICE_YAML)" "$(MANIFEST_MUTATING_WEBHOOK_YAML)"
+	./hack/load-cert-into-manifest.sh "$(CERT_FILE_PATH)" "$(MANIFEST_SECRET_YAML)" "$(MANIFEST_MUTATING_WEBHOOK_YAML)"
 

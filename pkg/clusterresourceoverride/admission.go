@@ -18,17 +18,27 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/klog"
 
+	"github.com/openshift/cluster-resource-override-admission/pkg/api"
 	admissionresponse "github.com/openshift/cluster-resource-override-admission/pkg/response"
 )
 
 const (
-	clusterResourceOverrideAnnotation = "autoscaling.openshift.io/cluster-resource-override-enabled"
-	defaultResyncPeriod               = 5 * time.Hour
-	configurationEnvName 			  = "CONFIGURATION_PATH"
+	Resource = "clusterresourceoverrides"
+	Singular = "clusterresourceoverride"
+	Name     = "clusterresourceoverride"
+)
+
+const (
+	defaultResyncPeriod  = 5 * time.Hour
+	configurationEnvName = "CONFIGURATION_PATH"
 )
 
 const (
 	cpuBaseScaleFactor = 1000.0 / (1024.0 * 1024.0 * 1024.0) // 1000 milliCores per 1GiB
+)
+
+var (
+	EnabledLabelName = fmt.Sprintf("%s.%s/enabled", Resource, api.Group)
 )
 
 var (
@@ -66,13 +76,13 @@ func NewInClusterAdmission(kubeClientConfig *restclient.Config, stopCh <-chan st
 	configLoader := func() (config *Config, err error) {
 		configPath := os.Getenv(configurationEnvName)
 		if configPath == "" {
-			err = fmt.Errorf("no configuration file specified, env var %s is not set", configurationEnvName)
+			err = fmt.Errorf("name=%s no configuration file specified, env var %s is not set", Name, configurationEnvName)
 			return
 		}
 
 		externalConfig, decodeErr := DecodeWithFile(configPath)
 		if decodeErr != nil {
-			err = fmt.Errorf("file=%s failed to decode configuration - %s", configPath, decodeErr.Error())
+			err = fmt.Errorf("name=%s file=%s failed to decode configuration - %s", Name, configPath, decodeErr.Error())
 			return
 		}
 
@@ -88,13 +98,13 @@ func NewInClusterAdmission(kubeClientConfig *restclient.Config, stopCh <-chan st
 func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, configLoaderFunc ConfigLoaderFunc) (admission Admission, err error) {
 	config, configLoadErr := configLoaderFunc()
 	if configLoadErr != nil {
-		err = fmt.Errorf("failed to load configuration - %s", configLoadErr.Error())
+		err = fmt.Errorf("name=%s failed to load configuration - %s", Name, configLoadErr.Error())
 		return
 	}
 
 	client, clientErr := kubernetes.NewForConfig(kubeClientConfig)
 	if clientErr != nil {
-		err = fmt.Errorf("failed to load configuration - %s", clientErr.Error())
+		err = fmt.Errorf("name=%s failed to load configuration - %s", Name, clientErr.Error())
 		return
 	}
 
@@ -106,7 +116,7 @@ func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, c
 	go nsInformer.Run(stopCh)
 
 	if !cache.WaitForCacheSync(stopCh, nsInformer.HasSynced) {
-		err = errors.New("failed to wait for cache to sync")
+		err = fmt.Errorf("name=%s failed to wait for cache to sync", Name)
 
 		klog.V(1).Info(err.Error())
 		return
@@ -171,44 +181,31 @@ func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1beta
 }
 
 func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1beta1.AdmissionRequest) (exempt bool, response *admissionv1beta1.AdmissionResponse) {
-	klog.V(5).Infof("%s - checking if the resource is exempt", request.Namespace)
+	// we enforce an opt-in model.
+	// all resource(s) are by default exempt unless the containing namespace has the right label.
+	exempt = true
 
-	pod, err := getPod(request)
-	if err != nil {
-		response = admissionresponse.WithBadRequest(request, err)
-		return
-	}
-
-	klog.V(5).Infof("looking at pod %s in project %s", pod.Name, request.Namespace)
-
-	// allow annotations on project to override
 	ns, err := p.nsLister.Get(request.Namespace)
 	if err != nil {
-		klog.Warningf("got an error retrieving namespace: %v", err)
+		klog.Warningf("namespace=%s error retrieving namespace: %v", request.Namespace, err)
 		response = admissionresponse.WithForbidden(request, err)
 		return
 	}
 
-	projectEnabledPlugin, exists := ns.Annotations[clusterResourceOverrideAnnotation]
-	if exists && projectEnabledPlugin != "true" {
-		klog.V(5).Infof("namespace=%s skipping, namespace is not enabled", request.Namespace)
+	enabled, exists := ns.Labels[EnabledLabelName]
+	if exists && enabled == "true" {
+		klog.V(5).Infof("namespace=%s namespace is not exempt", request.Namespace)
 
-		exempt = true
+		exempt = false
 		return
 	}
 
-	if IsNamespaceExempt(ns.Name) {
-		klog.V(5).Infof("namespace=%s skipping exempt namespace", request.Namespace)
-
-		exempt = true // project is exempted, do nothing
-		return
-	}
-
+	klog.V(5).Infof("namespace=%s - namespace is exempt", request.Namespace)
 	return
 }
 
 func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse {
-	klog.V(5).Infof("%s - admitting resource", request.Namespace)
+	klog.V(5).Infof("namespace=%s - admitting resource", request.Namespace)
 
 	pod, err := getPod(request)
 	if err != nil {
@@ -222,7 +219,7 @@ func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.Admis
 		return admissionresponse.WithForbidden(request, err)
 	}
 
-	klog.V(5).Infof("initial pod limits are: %#v", pod.Spec)
+	klog.V(5).Infof("namespace=%s initial pod limits are: %#v", request.Namespace, pod.Spec)
 
 	mutator, err := NewMutator(p.config, setNamespaceFloor(nsMinimum), cpuBaseScaleFactor)
 	if err != nil {
@@ -234,7 +231,7 @@ func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.Admis
 		return admissionresponse.WithInternalServerError(request, err)
 	}
 
-	klog.V(5).Infof("pod limits after overrides are: %#v", current.Spec)
+	klog.V(5).Infof("namespace=%s pod limits after overrides are: %#v", request.Namespace, current.Spec)
 
 	patch, patchErr := Patch(request.Object, current)
 	if patchErr != nil {
