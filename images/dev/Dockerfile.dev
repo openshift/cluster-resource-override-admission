@@ -5,4 +5,3 @@ ADD bin/cluster-resource-override-admission /usr/bin
 
 ENV CONFIGURATION_PATH=/etc/clusterresourceoverride/config/override.yaml
 
-ENTRYPOINT ["/usr/bin/cluster-resource-override-admission"]
