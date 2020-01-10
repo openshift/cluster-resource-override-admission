@@ -23,6 +23,8 @@ spec:
         - name: clusterresourceoverride
           image: docker.io/tohinkashem/clusterresourceoverride:dev
           imagePullPolicy: Always
+          command:
+            - /usr/bin/cluster-resource-override-admission
           args:
             - "--secure-port=9400"
             - "--bind-address=127.0.0.1"
