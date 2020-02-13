@@ -31,3 +31,4 @@ webhooks:
     failurePolicy: Fail
     timeoutSeconds: 5
     sideEffects: None
+    reinvocationPolicy: IfNeeded

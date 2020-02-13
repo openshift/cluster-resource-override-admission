@@ -109,34 +109,38 @@ func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, c
 	}
 
 	factory := informers.NewSharedInformerFactory(client, defaultResyncPeriod)
-	informer := factory.Core().V1().Namespaces()
-	nsLister := informer.Lister()
 
-	nsInformer := informer.Informer()
+	namespaces := factory.Core().V1().Namespaces()
+	nsInformer := namespaces.Informer()
 	go nsInformer.Run(stopCh)
 
-	if !cache.WaitForCacheSync(stopCh, nsInformer.HasSynced) {
-		err = fmt.Errorf("name=%s failed to wait for cache to sync", Name)
+	limitRanges := factory.Core().V1().LimitRanges()
+	limitRangeInformer := limitRanges.Informer()
+	go limitRangeInformer.Run(stopCh)
 
-		klog.V(1).Info(err.Error())
+	if !cache.WaitForCacheSync(stopCh, nsInformer.HasSynced) {
+		err = fmt.Errorf("name=%s failed to wait for Namespace informer cache to sync", Name)
 		return
 	}
 
-	limitRangesLister := factory.Core().V1().LimitRanges().Lister()
+	if !cache.WaitForCacheSync(stopCh, limitRangeInformer.HasSynced) {
+		err = fmt.Errorf("name=%s failed to wait for LimitRange informer cache to sync", Name)
+		return
+	}
 
 	admission = &clusterResourceOverrideAdmission{
 		config:   config,
-		nsLister: nsLister,
+		nsLister: namespaces.Lister(),
 		limitQuerier: &namespaceLimitQuerier{
-			limitRangesLister: limitRangesLister,
+			limitRangesLister: limitRanges.Lister(),
 		},
 	}
 
 	return
 }
 
-func setNamespaceFloor(nsMinimum *Floor) *Floor {
-	target := &Floor{
+func setNamespaceFloor(nsMinimum *CPUMemory) *CPUMemory {
+	target := &CPUMemory{
 		Memory: &defaultMemoryFloor,
 		CPU:    &defaultCPUFloor,
 	}
@@ -214,14 +218,15 @@ func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.Admis
 
 	// Don't mutate resource requirements below the namespace
 	// limit minimums.
-	nsMinimum, err := p.limitQuerier.QueryMinimum(request.Namespace)
+	nsMinimum, nsMaximum, err := p.limitQuerier.QueryFloorAndCeiling(request.Namespace)
 	if err != nil {
 		return admissionresponse.WithForbidden(request, err)
 	}
+	klog.V(5).Infof("namespace=%s LimitRange query - minimum=%v maximum=%v", request.Namespace, nsMinimum, nsMaximum)
 
-	klog.V(5).Infof("namespace=%s initial pod limits are: %#v", request.Namespace, pod.Spec)
+	klog.V(5).Infof("namespace=%s initial pod: initContainers=%#v containers=%#v", request.Namespace, pod.Spec.InitContainers, pod.Spec.Containers)
 
-	mutator, err := NewMutator(p.config, setNamespaceFloor(nsMinimum), cpuBaseScaleFactor)
+	mutator, err := NewMutator(p.config, setNamespaceFloor(nsMinimum), nsMaximum, cpuBaseScaleFactor)
 	if err != nil {
 		return admissionresponse.WithInternalServerError(request, err)
 	}
@@ -231,7 +236,7 @@ func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.Admis
 		return admissionresponse.WithInternalServerError(request, err)
 	}
 
-	klog.V(5).Infof("namespace=%s pod limits after overrides are: %#v", request.Namespace, current.Spec)
+	klog.V(5).Infof("namespace=%s pod limits after overrides are: initContainers=%#v containers=%#v", request.Namespace, current.Spec.InitContainers, current.Spec.Containers)
 
 	patch, patchErr := Patch(request.Object, current)
 	if patchErr != nil {

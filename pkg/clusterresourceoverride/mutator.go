@@ -8,20 +8,21 @@ import (
 	"k8s.io/klog"
 )
 
-type Floor struct {
+type CPUMemory struct {
 	CPU    *resource.Quantity
 	Memory *resource.Quantity
 }
 
-func NewMutator(config *Config, floor *Floor, cpuBaseScaleFactor float64) (mutator *podMutator, err error) {
-	if config == nil || floor == nil {
-		err = errors.New("invalid input")
+func NewMutator(config *Config, minimum *CPUMemory, maximum *CPUMemory, cpuBaseScaleFactor float64) (mutator *podMutator, err error) {
+	if config == nil || minimum == nil || maximum == nil {
+		err = errors.New("NewMutator: invalid input")
 		return
 	}
 
 	mutator = &podMutator{
 		config:             config,
-		floor:              floor,
+		floor:              minimum,
+		ceiling:            maximum,
 		cpuBaseScaleFactor: cpuBaseScaleFactor,
 	}
 	return
@@ -29,7 +30,8 @@ func NewMutator(config *Config, floor *Floor, cpuBaseScaleFactor float64) (mutat
 
 type podMutator struct {
 	config             *Config
-	floor              *Floor
+	floor              *CPUMemory
+	ceiling            *CPUMemory
 	cpuBaseScaleFactor float64
 }
 
@@ -94,6 +96,12 @@ func (m *podMutator) OverrideMemory(resources *corev1.ResourceRequirements) {
 		overridden = &copy
 	}
 
+	if m.IsMemoryCeilingSpecified() && overridden.Cmp(*m.ceiling.Memory) > 0 {
+		klog.V(5).Infof("%s pod limit %q above namespace limit; setting limit to %q", corev1.ResourceMemory, overridden.String(), m.ceiling.Memory.String())
+		copy := m.ceiling.Memory.DeepCopy()
+		overridden = &copy
+	}
+
 	ensureRequests(resources)
 	resources.Requests[corev1.ResourceMemory] = *overridden
 }
@@ -118,6 +126,13 @@ func (m *podMutator) OverrideCPULimit(resources *corev1.ResourceRequirements) {
 		klog.V(5).Infof("%s pod limit %q below namespace limit; setting limit to %q", corev1.ResourceCPU, overridden.String(), m.floor.CPU.String())
 
 		clone := m.floor.CPU.DeepCopy()
+		overridden = &clone
+	}
+
+	if m.IsCpuCeilingSpecified() && overridden.Cmp(*m.ceiling.CPU) > 0 {
+		klog.V(5).Infof("%s pod limit %q above namespace limit; setting limit to %q", corev1.ResourceCPU, overridden.String(), m.ceiling.CPU.String())
+
+		clone := m.ceiling.CPU.DeepCopy()
 		overridden = &clone
 	}
 
@@ -146,6 +161,12 @@ func (m *podMutator) OverrideCPU(resources *corev1.ResourceRequirements) {
 		overridden = &clone
 	}
 
+	if m.IsCpuCeilingSpecified() && overridden.Cmp(*m.ceiling.CPU) > 0 {
+		klog.V(5).Infof("%s pod limit %q above namespace limit; setting limit to %q", corev1.ResourceCPU, overridden.String(), m.ceiling.CPU.String())
+		clone := m.ceiling.CPU.DeepCopy()
+		overridden = &clone
+	}
+
 	ensureRequests(resources)
 	resources.Requests[corev1.ResourceCPU] = *overridden
 }
@@ -156,6 +177,14 @@ func (m *podMutator) IsCpuFloorSpecified() bool {
 
 func (m *podMutator) IsMemoryFloorSpecified() bool {
 	return m.floor != nil && m.floor.Memory != nil
+}
+
+func (m *podMutator) IsCpuCeilingSpecified() bool {
+	return m.ceiling != nil && m.ceiling.CPU != nil
+}
+
+func (m *podMutator) IsMemoryCeilingSpecified() bool {
+	return m.ceiling != nil && m.ceiling.Memory != nil
 }
 
 func ensureRequests(resources *corev1.ResourceRequirements) {

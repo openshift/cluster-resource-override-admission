@@ -15,7 +15,7 @@ func TestSetNamespaceFloor(t *testing.T) {
 	memory := resource.MustParse("1Gi")
 	require.False(t, memory.Equal(defaultMemoryFloor), "bad test setup, default and namespace memory floor must not be equal")
 
-	namespaceFloor := &Floor{
+	namespaceFloor := &CPUMemory{
 		CPU:    &cpu,
 		Memory: &memory,
 	}

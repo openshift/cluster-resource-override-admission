@@ -16,7 +16,7 @@ const (
 func TestMutator_Mutate(t *testing.T) {
 	cpu := resource.MustParse("1m")
 	memory := resource.MustParse("1Mi")
-	floor := &Floor{
+	floor := &CPUMemory{
 		CPU:    &cpu,
 		Memory: &memory,
 	}
@@ -25,7 +25,7 @@ func TestMutator_Mutate(t *testing.T) {
 		CpuRequestToLimitRatio:    0.25,
 		MemoryRequestToLimitRatio: 0.5,
 	}
-	mutator, err := NewMutator(config, floor, factor)
+	mutator, err := NewMutator(config, floor, &CPUMemory{}, factor)
 	require.NoError(t, err)
 	require.NotNil(t, mutator)
 
@@ -168,7 +168,7 @@ func TestMutator_OverrideMemory(t *testing.T) {
 					config: &Config{
 						MemoryRequestToLimitRatio: 0.5,
 					},
-					floor: &Floor{
+					floor: &CPUMemory{
 						Memory: func() *resource.Quantity {
 							q := resource.MustParse("4Gi")
 							return &q
@@ -280,7 +280,7 @@ func TestMutator_OverrideCpu(t *testing.T) {
 					config: &Config{
 						CpuRequestToLimitRatio: 0.10,
 					},
-					floor: &Floor{
+					floor: &CPUMemory{
 						CPU: func() *resource.Quantity {
 							q := resource.MustParse("250m")
 							return &q
@@ -381,7 +381,7 @@ func TestMutator_OverrideCPULimit(t *testing.T) {
 					config: &Config{
 						LimitCPUToMemoryRatio: 0.5,
 					},
-					floor: &Floor{
+					floor: &CPUMemory{
 						CPU: func() *resource.Quantity {
 							q := resource.MustParse("1000m")
 							return &q
