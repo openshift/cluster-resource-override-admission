@@ -84,7 +84,7 @@ github.com/modern-go/concurrent
 github.com/modern-go/reflect2
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 github.com/munnerz/goautoneg
-# github.com/openshift/generic-admission-server v1.14.1-0.20210121183534-8cbb259223ad
+# github.com/openshift/generic-admission-server v1.14.1-0.20210126171102-c9c786658775
 github.com/openshift/generic-admission-server/pkg/apiserver
 github.com/openshift/generic-admission-server/pkg/cmd
 github.com/openshift/generic-admission-server/pkg/cmd/server
