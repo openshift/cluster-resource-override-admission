@@ -18,7 +18,7 @@ include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 )
 
 # build image for ci
-CI_IMAGE_REGISTRY ?=registry.svc.ci.openshift.org
+CI_IMAGE_REGISTRY ?=registry.ci.openshift.org
 $(call build-image,cluster-resource-override-admission,$(CI_IMAGE_REGISTRY)/autoscaling/cluster-resource-override,./images/ci/Dockerfile,.)
 
 # build image for dev use.
