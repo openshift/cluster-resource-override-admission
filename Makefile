@@ -12,13 +12,13 @@ MANIFEST_SECRET_YAML := "$(MANIFEST_DIR)/400_secret.yaml"
 MANIFEST_MUTATING_WEBHOOK_YAML := "$(MANIFEST_DIR)/600_mutating.yaml"
 
 # Include the library makefile
-include $(addprefix ./vendor/github.com/openshift/library-go/alpha-build-machinery/make/, \
+include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 	golang.mk \
 	targets/openshift/images.mk \
 )
 
 # build image for ci
-CI_IMAGE_REGISTRY ?=registry.svc.ci.openshift.org
+CI_IMAGE_REGISTRY ?=registry.ci.openshift.org
 $(call build-image,cluster-resource-override-admission,$(CI_IMAGE_REGISTRY)/autoscaling/cluster-resource-override,./images/ci/Dockerfile,.)
 
 # build image for dev use.

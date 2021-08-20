@@ -6,7 +6,7 @@ import (
 
 	"k8s.io/klog"
 
-	admissionv1beta1 "k8s.io/api/admission/v1beta1"
+	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	restclient "k8s.io/client-go/rest"
 
@@ -63,7 +63,7 @@ func (m *clusterResourceOverrideHook) MutatingResource() (plural schema.GroupVer
 
 // Admit is called to decide whether to accept the admission request. The returned AdmissionResponse may
 // use the Patch field to mutate the object from the passed AdmissionRequest.
-func (m *clusterResourceOverrideHook) Admit(request *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse {
+func (m *clusterResourceOverrideHook) Admit(request *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 

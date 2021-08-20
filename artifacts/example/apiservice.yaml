@@ -7,7 +7,7 @@
 # - prevents other extension API servers from leaking their service account tokens to the webhook
 #
 # for more information, see: https://kubernetes.io/blog/2018/01/extensible-admission-is-beta
-apiVersion: apiregistration.k8s.io/v1beta1
+apiVersion: apiregistration.k8s.io/v1
 kind: APIService
 metadata:
   name: v1.admission.autoscaling.openshift.io
