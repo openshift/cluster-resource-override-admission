@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/cache"
 
-	admissionv1beta1 "k8s.io/api/admission/v1beta1"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -56,18 +56,18 @@ type Admission interface {
 
 	// IsApplicable returns true if the given resource inside the request is
 	// applicable to this admission controller. Otherwise it returns false.
-	IsApplicable(request *admissionv1beta1.AdmissionRequest) bool
+	IsApplicable(request *admissionv1.AdmissionRequest) bool
 
 	// IsExempt returns true if the given resource is exempt from being admitted.
 	// Otherwise it returns false. On any error, response is set with appropriate
 	// status and error message.
 	// If response is not nil, the caller should not proceed with the admission.
-	IsExempt(request *admissionv1beta1.AdmissionRequest) (exempt bool, response *admissionv1beta1.AdmissionResponse)
+	IsExempt(request *admissionv1.AdmissionRequest) (exempt bool, response *admissionv1.AdmissionResponse)
 
 	// Admit makes an attempt to admit the specified resource in the request.
 	// It returns an AdmissionResponse that is set appropriately. On success,
 	// the response should contain the patch for update.
-	Admit(admissionSpec *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse
+	Admit(admissionSpec *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse
 }
 
 // NewInClusterAdmission returns a new instance of Admission that is appropriate
@@ -173,10 +173,10 @@ func (p *clusterResourceOverrideAdmission) GetConfiguration() *Config {
 	return p.config
 }
 
-func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1beta1.AdmissionRequest) bool {
+func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1.AdmissionRequest) bool {
 	if request.Resource.Resource == string(corev1.ResourcePods) &&
 		request.SubResource == "" &&
-		(request.Operation == admissionv1beta1.Create || request.Operation == admissionv1beta1.Update) {
+		(request.Operation == admissionv1.Create || request.Operation == admissionv1.Update) {
 
 		return true
 	}
@@ -184,7 +184,7 @@ func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1beta
 	return false
 }
 
-func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1beta1.AdmissionRequest) (exempt bool, response *admissionv1beta1.AdmissionResponse) {
+func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1.AdmissionRequest) (exempt bool, response *admissionv1.AdmissionResponse) {
 	// we enforce an opt-in model.
 	// all resource(s) are by default exempt unless the containing namespace has the right label.
 	exempt = true
@@ -208,7 +208,7 @@ func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1beta1.Ad
 	return
 }
 
-func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse {
+func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
 	klog.V(5).Infof("namespace=%s - admitting resource", request.Namespace)
 
 	pod, err := getPod(request)
@@ -246,7 +246,7 @@ func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1beta1.Admis
 	return admissionresponse.WithPatch(request, patch)
 }
 
-func getPod(request *admissionv1beta1.AdmissionRequest) (pod *corev1.Pod, err error) {
+func getPod(request *admissionv1.AdmissionRequest) (pod *corev1.Pod, err error) {
 	pod = &corev1.Pod{}
 	err = json.Unmarshal(request.Object.Raw, pod)
 	return

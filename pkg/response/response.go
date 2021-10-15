@@ -3,12 +3,12 @@ package response
 import (
 	"net/http"
 
-	admissionv1beta1 "k8s.io/api/admission/v1beta1"
+	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func WithInternalServerError(request *admissionv1beta1.AdmissionRequest, err error) *admissionv1beta1.AdmissionResponse {
-	return &admissionv1beta1.AdmissionResponse{
+func WithInternalServerError(request *admissionv1.AdmissionRequest, err error) *admissionv1.AdmissionResponse {
+	return &admissionv1.AdmissionResponse{
 		UID:     request.UID,
 		Allowed: false,
 		Result: &metav1.Status{
@@ -20,15 +20,15 @@ func WithInternalServerError(request *admissionv1beta1.AdmissionRequest, err err
 	}
 }
 
-func WithAllowed(request *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse {
-	return &admissionv1beta1.AdmissionResponse{
+func WithAllowed(request *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
+	return &admissionv1.AdmissionResponse{
 		UID:     request.UID,
 		Allowed: true,
 	}
 }
 
-func WithBadRequest(request *admissionv1beta1.AdmissionRequest, err error) *admissionv1beta1.AdmissionResponse {
-	return &admissionv1beta1.AdmissionResponse{
+func WithBadRequest(request *admissionv1.AdmissionRequest, err error) *admissionv1.AdmissionResponse {
+	return &admissionv1.AdmissionResponse{
 		UID:     request.UID,
 		Allowed: false,
 		Result: &metav1.Status{
@@ -40,8 +40,8 @@ func WithBadRequest(request *admissionv1beta1.AdmissionRequest, err error) *admi
 	}
 }
 
-func WithForbidden(request *admissionv1beta1.AdmissionRequest, err error) *admissionv1beta1.AdmissionResponse {
-	return &admissionv1beta1.AdmissionResponse{
+func WithForbidden(request *admissionv1.AdmissionRequest, err error) *admissionv1.AdmissionResponse {
+	return &admissionv1.AdmissionResponse{
 		UID:     request.UID,
 		Allowed: false,
 		Result: &metav1.Status{
@@ -53,14 +53,14 @@ func WithForbidden(request *admissionv1beta1.AdmissionRequest, err error) *admis
 	}
 }
 
-func WithPatch(request *admissionv1beta1.AdmissionRequest, patch []byte) *admissionv1beta1.AdmissionResponse {
-	response := &admissionv1beta1.AdmissionResponse{
+func WithPatch(request *admissionv1.AdmissionRequest, patch []byte) *admissionv1.AdmissionResponse {
+	response := &admissionv1.AdmissionResponse{
 		UID:     request.UID,
 		Allowed: true,
 	}
 
 	if patch != nil {
-		patchType := admissionv1beta1.PatchTypeJSONPatch
+		patchType := admissionv1.PatchTypeJSONPatch
 
 		response.Patch = patch
 		response.PatchType = &patchType
