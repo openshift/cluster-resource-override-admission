@@ -1,7 +1,6 @@
 package clusterresourceoverride
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +19,7 @@ import (
 
 	"github.com/openshift/cluster-resource-override-admission/pkg/api"
 	admissionresponse "github.com/openshift/cluster-resource-override-admission/pkg/response"
+	"github.com/openshift/cluster-resource-override-admission/pkg/utils"
 )
 
 const (
@@ -211,7 +211,7 @@ func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1.Admissi
 func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
 	klog.V(5).Infof("namespace=%s - admitting resource", request.Namespace)
 
-	pod, err := getPod(request)
+	pod, err := utils.GetPod(request)
 	if err != nil {
 		return admissionresponse.WithBadRequest(request, err)
 	}
@@ -238,16 +238,10 @@ func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1.AdmissionR
 
 	klog.V(5).Infof("namespace=%s pod limits after overrides are: initContainers=%#v containers=%#v", request.Namespace, current.Spec.InitContainers, current.Spec.Containers)
 
-	patch, patchErr := Patch(request.Object, current)
+	patch, patchErr := utils.Patch(request.Object, current)
 	if patchErr != nil {
 		return admissionresponse.WithInternalServerError(request, patchErr)
 	}
 
 	return admissionresponse.WithPatch(request, patch)
-}
-
-func getPod(request *admissionv1.AdmissionRequest) (pod *corev1.Pod, err error) {
-	pod = &corev1.Pod{}
-	err = json.Unmarshal(request.Object.Raw, pod)
-	return
 }

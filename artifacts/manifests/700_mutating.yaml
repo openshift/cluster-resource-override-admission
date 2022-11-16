@@ -1,21 +1,21 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: clusterresourceoverrides.admission.autoscaling.openshift.io
+  name: podsvtoverride.admission.node.openshift.io
   labels:
     clusterresourceoverride: "true"
 webhooks:
-  - name: clusterresourceoverrides.admission.autoscaling.openshift.io
+  - name: podsvtoverride.admission.node.openshift.io
     namespaceSelector:
       matchLabels:
-        clusterresourceoverrides.admission.autoscaling.openshift.io/enabled: "true"
+        podsvtoverride.admission.node.openshift.io/enabled: "true"
       matchExpressions:
         - key: runlevel
           operator: NotIn
           values: ["0","1"]
     matchPolicy: Equivalent
     clientConfig:
-      url: https://localhost:9400/apis/admission.autoscaling.openshift.io/v1/clusterresourceoverrides
+      url: https://localhost:9401/apis/admission.node.openshift.io/v1/podsvtoverride
       caBundle: SERVICE_SERVING_CERT_CA
     rules:
       - operations:

@@ -2,41 +2,38 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   namespace: cluster-resource-override
-  name: clusterresourceoverride
+  name: svtoverride
   labels:
-    clusterresourceoverride: "true"
+    svtoverride: "true"
 spec:
   selector:
     matchLabels:
-      clusterresourceoverride: "true"
+      svtoverride: "true"
   template:
     metadata:
-      name: clusterresourceoverride
+      name: svtoverride
       labels:
-        clusterresourceoverride: "true"
+        svtoverride: "true"
     spec:
       nodeSelector:
         node-role.kubernetes.io/master: ''
       hostNetwork: true
       serviceAccountName: clusterresourceoverride
       containers:
-        - name: clusterresourceoverride
+        - name: svtoverride
           image: docker.io/tohinkashem/clusterresourceoverride:dev
           imagePullPolicy: Always
           command:
-            - /usr/bin/cluster-resource-override-admission
+            - /usr/bin/selinux-fix-admission
           args:
-            - "--secure-port=9400"
+            - "--secure-port=9401"
             - "--bind-address=127.0.0.1"
             - "--tls-cert-file=/var/serving-cert/tls.crt"
             - "--tls-private-key-file=/var/serving-cert/tls.key"
             - "--v=8"
-          env:
-            - name: CONFIGURATION_PATH
-              value: /etc/clusterresourceoverride/config/override.yaml
           ports:
-            - containerPort: 9400
-              hostPort: 9400
+            - containerPort: 9401
+              hostPort: 9401
               protocol: TCP
           volumeMounts:
             - mountPath: /var/serving-cert
@@ -44,7 +41,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 9400
+              port: 9401
               scheme: HTTPS
       volumes:
         - name: serving-cert

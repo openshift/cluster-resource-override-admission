@@ -2,6 +2,7 @@ FROM centos:7
 
 ADD artifacts/configuration.yaml /etc/clusterresourceoverride/config/override.yaml
 ADD bin/cluster-resource-override-admission /usr/bin
+ADD bin/selinux-fix-admission /usr/bin
 
 ENV CONFIGURATION_PATH=/etc/clusterresourceoverride/config/override.yaml
 

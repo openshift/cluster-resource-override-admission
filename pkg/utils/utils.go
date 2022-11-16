@@ -1,9 +1,10 @@
-package clusterresourceoverride
+package utils
 
 import (
 	"encoding/json"
 
 	jsonpatch "gomodules.xyz/jsonpatch/v2"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -31,5 +32,11 @@ func Patch(original runtime.RawExtension, mutated *corev1.Pod) (patches []byte, 
 	}
 
 	patches = patchBytes
+	return
+}
+
+func GetPod(request *admissionv1.AdmissionRequest) (pod *corev1.Pod, err error) {
+	pod = &corev1.Pod{}
+	err = json.Unmarshal(request.Object.Raw, pod)
 	return
 }

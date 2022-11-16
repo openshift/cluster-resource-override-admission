@@ -10,3 +10,4 @@ LABEL io.k8s.display-name="OpenShift ClusterResourceOverride Admission Webhook" 
       io.k8s.description="Manages level of overcommit of Pod Resource(s)" \
       io.openshift.tags="openshift,clusterresourceoverride"
 COPY --from=builder /go/src/github.com/openshift/cluster-resource-override-admission/bin/cluster-resource-override-admission /usr/bin/
+COPY --from=builder /go/src/github.com/openshift/cluster-resource-override-admission/bin/selinux-fix-admission /usr/bin/

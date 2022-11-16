@@ -10,6 +10,7 @@ MANIFEST_DIR := "$(OUTPUT_DIR)/manifests"
 CERT_FILE_PATH := "$(OUTPUT_DIR)/certs.yaml"
 MANIFEST_SECRET_YAML := "$(MANIFEST_DIR)/400_secret.yaml"
 MANIFEST_MUTATING_WEBHOOK_YAML := "$(MANIFEST_DIR)/600_mutating.yaml"
+SVT_MUTATING_WEBHOOK_YAML := "$(MANIFEST_DIR)/700_mutating.yaml"
 
 # Include the library makefile
 include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
@@ -39,4 +40,4 @@ manifests:
 
 	# load the certs into the manifest yaml.
 	./hack/load-cert-into-manifest.sh "$(CERT_FILE_PATH)" "$(MANIFEST_SECRET_YAML)" "$(MANIFEST_MUTATING_WEBHOOK_YAML)"
-
+	./hack/load-cert-into-manifest.sh "$(CERT_FILE_PATH)" "$(MANIFEST_SECRET_YAML)" "$(SVT_MUTATING_WEBHOOK_YAML)"
