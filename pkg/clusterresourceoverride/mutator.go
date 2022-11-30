@@ -2,6 +2,7 @@ package clusterresourceoverride
 
 import (
 	"errors"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -38,6 +39,10 @@ type podMutator struct {
 func (m *podMutator) Mutate(in *corev1.Pod) (out *corev1.Pod, err error) {
 	current := in.DeepCopy()
 
+	if m.config.ForceSelinuxRelabel {
+		m.OverrideForceSelinuxRelabel(current)
+	}
+
 	for i := range current.Spec.InitContainers {
 		m.Override(&current.Spec.InitContainers[i])
 	}
@@ -48,6 +53,41 @@ func (m *podMutator) Mutate(in *corev1.Pod) (out *corev1.Pod, err error) {
 
 	out = current
 	return
+}
+
+const (
+	SpcType                = "spc_t"
+	SelinuxRelabelResource = "forceselinuxrelabel"
+	SelinuxRelabelGroup    = "admission.node.openshift.io"
+)
+
+var (
+	// SelinuxFixEnabledLabelName is the name of the label applied to the pod
+	SelinuxFixEnabledLabelName = fmt.Sprintf("%s.%s/enabled", SelinuxRelabelResource, SelinuxRelabelGroup)
+)
+
+func (m *podMutator) OverrideForceSelinuxRelabel(pod *corev1.Pod) {
+	enabled, exists := pod.Labels[SelinuxFixEnabledLabelName]
+	if !exists || (exists && enabled == "false") {
+		return
+	}
+	// Find if the persistent volume claim exists
+	foundPersistentVolumeClaim := false
+	for _, volume := range pod.Spec.Volumes {
+		if volume.PersistentVolumeClaim != nil {
+			foundPersistentVolumeClaim = true
+			break
+		}
+	}
+	// Return without modification if the PVC does not exist
+	if !foundPersistentVolumeClaim {
+		return
+	}
+	// PVC exists so modify the pod with the spc_t label
+	if pod.Spec.SecurityContext == nil {
+		pod.Spec.SecurityContext = &corev1.PodSecurityContext{}
+	}
+	pod.Spec.SecurityContext.SELinuxOptions = &corev1.SELinuxOptions{Type: SpcType}
 }
 
 func (m *podMutator) Override(container *corev1.Container) {
