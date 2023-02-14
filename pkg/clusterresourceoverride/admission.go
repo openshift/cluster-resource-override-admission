@@ -62,7 +62,7 @@ type Admission interface {
 	// Otherwise it returns false. On any error, response is set with appropriate
 	// status and error message.
 	// If response is not nil, the caller should not proceed with the admission.
-	IsExempt(request *admissionv1.AdmissionRequest) (exempt bool, response *admissionv1.AdmissionResponse)
+	IsExempt(request *admissionv1.AdmissionRequest) (exempt bool, selinuxExempt bool, response *admissionv1.AdmissionResponse)
 
 	// Admit makes an attempt to admit the specified resource in the request.
 	// It returns an AdmissionResponse that is set appropriately. On success,
@@ -184,10 +184,11 @@ func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1.Adm
 	return false
 }
 
-func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1.AdmissionRequest) (exempt bool, response *admissionv1.AdmissionResponse) {
+func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1.AdmissionRequest) (exempt bool, selinuxExempt bool, response *admissionv1.AdmissionResponse) {
 	// we enforce an opt-in model.
 	// all resource(s) are by default exempt unless the containing namespace has the right label.
 	exempt = true
+	selinuxExempt = true
 
 	ns, err := p.nsLister.Get(request.Namespace)
 	if err != nil {
@@ -201,6 +202,16 @@ func (p *clusterResourceOverrideAdmission) IsExempt(request *admissionv1.Admissi
 		klog.V(5).Infof("namespace=%s namespace is not exempt", request.Namespace)
 
 		exempt = false
+	}
+
+	enabled, exists = ns.Labels[SelinuxFixEnabledLabelName]
+	if exists && enabled == "true" {
+		klog.V(5).Infof("namespace=%s namespace is not exempt for selinux", request.Namespace)
+
+		selinuxExempt = false
+	}
+
+	if !exempt || !selinuxExempt {
 		return
 	}
 

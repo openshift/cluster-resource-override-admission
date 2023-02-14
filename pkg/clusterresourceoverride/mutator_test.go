@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -406,6 +407,181 @@ func TestMutator_OverrideCPULimit(t *testing.T) {
 			target := test.mutator()
 
 			target.OverrideCPULimit(test.input)
+
+			test.assert(t, test.input)
+		})
+	}
+}
+
+func TestMutator_OverrideSelinuxFix(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutator func() *podMutator
+		input   *corev1.Pod
+		assert  func(t *testing.T, resources *corev1.Pod)
+	}{
+		{
+			name: "Selinux Enabled with PVC and label",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						ForceSelinuxRelabel:       true,
+						LimitCPUToMemoryRatio:     100,
+						CpuRequestToLimitRatio:    100,
+						MemoryRequestToLimitRatio: 100,
+					},
+				}
+			},
+			input: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"forceselinuxrelabel.admission.node.openshift.io/enabled": "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{
+						{
+							Name: "test-pv-storage",
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc",
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:  "container_1",
+							Image: "busybox",
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "test-pvc",
+									MountPath: "/data",
+								},
+							},
+						},
+					},
+				},
+			},
+			assert: func(t *testing.T, pod *corev1.Pod) {
+				require.Equal(t, pod.Spec.SecurityContext.SELinuxOptions.Type, SpcType)
+			},
+		},
+		{
+			name: "Selinux Enabled with PVC without label",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						ForceSelinuxRelabel:       true,
+						LimitCPUToMemoryRatio:     100,
+						CpuRequestToLimitRatio:    100,
+						MemoryRequestToLimitRatio: 100,
+					},
+				}
+			},
+			input: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{
+						{
+							Name: "test-pv-storage",
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: "test-pvc",
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:  "container_1",
+							Image: "busybox",
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "test-pvc",
+									MountPath: "/data",
+								},
+							},
+						},
+					},
+				},
+			},
+			assert: func(t *testing.T, pod *corev1.Pod) {
+				require.Nil(t, pod.Spec.SecurityContext)
+			},
+		},
+		{
+			name: "Selinux Enabled without PVC with label",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						ForceSelinuxRelabel:       true,
+						LimitCPUToMemoryRatio:     100,
+						CpuRequestToLimitRatio:    100,
+						MemoryRequestToLimitRatio: 100,
+					},
+				}
+			},
+			input: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"forceselinuxrelabel.admission.node.openshift.io/enabled": "true",
+					},
+				},
+				Spec: corev1.PodSpec{},
+			},
+			assert: func(t *testing.T, pod *corev1.Pod) {
+				require.Nil(t, pod.Spec.SecurityContext)
+			},
+		},
+		{
+			name: "Selinux Enabled without PVC with label and existing SecurityContext",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						ForceSelinuxRelabel:       true,
+						LimitCPUToMemoryRatio:     100,
+						CpuRequestToLimitRatio:    100,
+						MemoryRequestToLimitRatio: 100,
+					},
+				}
+			},
+			input: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"forceselinuxrelabel.admission.node.openshift.io/enabled": "true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Volumes: []corev1.Volume{
+						{
+							Name: "test-pv-storage",
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:  "container_1",
+							Image: "busybox",
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "test-pvc",
+									MountPath: "/data",
+								},
+							},
+						},
+					},
+				},
+			},
+			assert: func(t *testing.T, pod *corev1.Pod) {
+				require.Nil(t, pod.Spec.SecurityContext)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			target := test.mutator()
+
+			target.OverrideForceSelinuxRelabel(test.input)
 
 			test.assert(t, test.input)
 		})

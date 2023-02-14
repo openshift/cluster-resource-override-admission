@@ -75,12 +75,12 @@ func (m *clusterResourceOverrideHook) Admit(request *admissionv1.AdmissionReques
 		return admissionresponse.WithAllowed(request)
 	}
 
-	exempt, response := m.admission.IsExempt(request)
+	exempt, selinuxExempt, response := m.admission.IsExempt(request)
 	if response != nil {
 		return response
 	}
 
-	if exempt {
+	if exempt && selinuxExempt {
 		// disabled for this project, do nothing
 		return admissionresponse.WithAllowed(request)
 	}
