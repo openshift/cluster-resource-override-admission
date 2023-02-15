@@ -32,3 +32,4 @@ webhooks:
     timeoutSeconds: 5
     sideEffects: None
     reinvocationPolicy: IfNeeded
+    admissionReviewVersions: ["v1"]
