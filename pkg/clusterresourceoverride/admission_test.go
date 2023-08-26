@@ -5,6 +5,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	admissionv1 "k8s.io/api/admission/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -25,4 +29,18 @@ func TestSetNamespaceFloor(t *testing.T) {
 
 	assert.True(t, cpu.Equal(*floorGot.CPU))
 	assert.True(t, memory.Equal(*floorGot.Memory))
+}
+
+// TestOverrideHookUpdatesNotApplicable tests to make sure that admission
+// regards UPDATE requests to a pod as not applicable, as currently kubernetes
+// doesn't allow the resource fields to be updated in-place
+func TestAdmissionUpdateRequestsNotApplicable(t *testing.T) {
+	admission := clusterResourceOverrideAdmission{}
+	req := &admissionv1.AdmissionRequest{
+		Operation:   "UPDATE",
+		Resource:    metav1.GroupVersionResource{Resource: string(corev1.ResourcePods)},
+		SubResource: "",
+	}
+	applicable := admission.IsApplicable(req)
+	assert.False(t, applicable)
 }
