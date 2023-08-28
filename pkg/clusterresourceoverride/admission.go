@@ -175,8 +175,7 @@ func (p *clusterResourceOverrideAdmission) GetConfiguration() *Config {
 
 func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1.AdmissionRequest) bool {
 	if request.Resource.Resource == string(corev1.ResourcePods) &&
-		request.SubResource == "" &&
-		(request.Operation == admissionv1.Create || request.Operation == admissionv1.Update) {
+		request.SubResource == "" && request.Operation == admissionv1.Create {
 
 		return true
 	}
