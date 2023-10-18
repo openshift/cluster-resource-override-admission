@@ -1,11 +1,7 @@
 approvers:
-- deads2k
-- sanchezl
-- tkashem
-- rphillips
-- sjenning
 - joelsmith
-reviewers:
-- sanchezl
-- tkashem
-component: "Node"
+- aravindhp
+- jkyros
+
+# Bugzilla fields:
+component: Pod Autoscaler
