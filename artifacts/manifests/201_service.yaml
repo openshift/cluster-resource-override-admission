@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: cluster-resource-override
+  name: clusterresourceoverride
+  labels:
+    clusterresourceoverride: "true"
+  annotations: 
+    service.beta.openshift.io/serving-cert-secret-name: server-serving-cert
+spec:
+  selector:
+    clusterresourceoverride: "true"
+  ports:
+    - port: 443
+      targetPort: 9400
+

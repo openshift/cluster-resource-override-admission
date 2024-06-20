@@ -1,0 +1,14 @@
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1.admission.autoscaling.openshift.io
+  annotations: 
+    service.alpha.openshift.io/inject-cabundle: "true"
+spec:
+  group: admission.autoscaling.openshift.io
+  version: v1
+  groupPriorityMinimum: 1000
+  versionPriority: 15
+  service:
+    name: clusterresourceoverride
+    namespace: cluster-resource-override

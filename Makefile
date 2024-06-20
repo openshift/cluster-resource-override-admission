@@ -7,9 +7,6 @@ GO_BUILD_BINDIR := bin
 ARTIFACTS := "./artifacts/manifests"
 OUTPUT_DIR := "./_output"
 MANIFEST_DIR := "$(OUTPUT_DIR)/manifests"
-CERT_FILE_PATH := "$(OUTPUT_DIR)/certs.yaml"
-MANIFEST_SECRET_YAML := "$(MANIFEST_DIR)/400_secret.yaml"
-MANIFEST_MUTATING_WEBHOOK_YAML := "$(MANIFEST_DIR)/600_mutating.yaml"
 
 # Include the library makefile
 include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
@@ -33,10 +30,4 @@ manifests:
 	rm -rf $(MANIFEST_DIR)
 	mkdir -p $(MANIFEST_DIR)
 	cp -r $(ARTIFACTS)/* $(MANIFEST_DIR)/
-
-	# generate certs
-	./hack/generate-cert.sh "$(CERT_FILE_PATH)"
-
-	# load the certs into the manifest yaml.
-	./hack/load-cert-into-manifest.sh "$(CERT_FILE_PATH)" "$(MANIFEST_SECRET_YAML)" "$(MANIFEST_MUTATING_WEBHOOK_YAML)"
 
