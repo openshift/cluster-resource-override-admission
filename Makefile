@@ -11,6 +11,13 @@ CERT_FILE_PATH := "$(OUTPUT_DIR)/certs.yaml"
 MANIFEST_SECRET_YAML := "$(MANIFEST_DIR)/400_secret.yaml"
 MANIFEST_MUTATING_WEBHOOK_YAML := "$(MANIFEST_DIR)/600_mutating.yaml"
 
+CONTAINER_ENGINE ?= podman
+IMAGE_BUILDER ?= $(CONTAINER_ENGINE)
+
+IMAGE_VERSION ?= dev
+IMAGE_TAG_BASE ?= quay.io/redhat/clusterresourceoverride
+LOCAL_OPERAND_IMAGE ?= $(IMAGE_TAG_BASE):$(IMAGE_VERSION)
+
 # Include the library makefile
 include $(addprefix ./vendor/github.com/openshift/build-machinery-go/make/, \
 	golang.mk \
@@ -23,10 +30,10 @@ $(call build-image,cluster-resource-override-admission,$(CI_IMAGE_REGISTRY)/auto
 
 # build image for dev use.
 local-image:
-	docker build -t $(LOCAL_IMAGE_REGISTRY):$(IMAGE_TAG) -f ./images/dev/Dockerfile.dev .
+	$(IMAGE_BUILDER) build -t $(LOCAL_OPERAND_IMAGE) -f ./images/dev/Dockerfile.dev .
 
 local-push:
-	docker push $(LOCAL_IMAGE_REGISTRY):$(IMAGE_TAG)
+	$(IMAGE_BUILDER) push $(LOCAL_OPERAND_IMAGE)
 
 # generate manifests for installing on a dev cluster.
 manifests:
