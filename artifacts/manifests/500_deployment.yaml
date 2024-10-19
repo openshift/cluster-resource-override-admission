@@ -1,11 +1,12 @@
 apiVersion: apps/v1
-kind: DaemonSet
+kind: Deployment
 metadata:
   namespace: cluster-resource-override
   name: clusterresourceoverride
   labels:
     clusterresourceoverride: "true"
 spec:
+  replicas: 2
   selector:
     matchLabels:
       clusterresourceoverride: "true"
@@ -17,7 +18,6 @@ spec:
     spec:
       nodeSelector:
         node-role.kubernetes.io/master: ''
-      hostNetwork: true
       serviceAccountName: clusterresourceoverride
       containers:
         - name: clusterresourceoverride
@@ -27,7 +27,6 @@ spec:
             - /usr/bin/cluster-resource-override-admission
           args:
             - "--secure-port=9400"
-            - "--bind-address=127.0.0.1"
             - "--audit-log-path=-"
             - "--tls-cert-file=/var/serving-cert/tls.crt"
             - "--tls-private-key-file=/var/serving-cert/tls.key"
@@ -37,8 +36,6 @@ spec:
               value: /etc/clusterresourceoverride/config/override.yaml
           ports:
             - containerPort: 9400
-              hostPort: 9400
-              protocol: TCP
           volumeMounts:
             - mountPath: /var/serving-cert
               name: serving-cert

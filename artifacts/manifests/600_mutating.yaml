@@ -4,6 +4,8 @@ metadata:
   name: clusterresourceoverrides.admission.autoscaling.openshift.io
   labels:
     clusterresourceoverride: "true"
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
 webhooks:
   - name: clusterresourceoverrides.admission.autoscaling.openshift.io
     namespaceSelector:
@@ -15,8 +17,11 @@ webhooks:
           values: ["0","1"]
     matchPolicy: Equivalent
     clientConfig:
-      url: https://localhost:9400/apis/admission.autoscaling.openshift.io/v1/clusterresourceoverrides
-      caBundle: SERVICE_SERVING_CERT_CA
+      service:
+        name: kubernetes 
+        namespace: default
+        path: /apis/admission.autoscaling.openshift.io/v1/clusterresourceoverrides
+      caBundle: ""
     rules:
       - operations:
           - CREATE

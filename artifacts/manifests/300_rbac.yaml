@@ -19,9 +19,9 @@ metadata:
   name: system:clusterresourceoverride-requester
 rules:
   - apiGroups:
-      - autoscaling.openshift.io
+      - admission.autoscaling.openshift.io
     resources:
-      - clusterresourceoverride
+      - clusterresourceoverrides
     verbs:
       - create
 ---
