@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9-minimal:9.5
+FROM registry.access.redhat.com/ubi9-minimal:9.6
 
 ADD artifacts/configuration.yaml /etc/clusterresourceoverride/config/override.yaml
 ADD bin/cluster-resource-override-admission /usr/bin
