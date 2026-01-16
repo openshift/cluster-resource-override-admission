@@ -4,7 +4,7 @@ WORKDIR /go/src/github.com/openshift/cluster-resource-override-admission
 COPY . .
 RUN make build
 
-FROM registry.ci.openshift.org/ocp/4.22:base-rhel9
+FROM registry.ci.openshift.org/ocp/4.22:base-rhel9-minimal
 
 LABEL io.k8s.display-name="OpenShift ClusterResourceOverride Admission Webhook" \
       io.k8s.description="Manages level of overcommit of Pod Resource(s)" \
