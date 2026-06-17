@@ -1,6 +1,7 @@
 package clusterresourceoverride
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,76 +16,171 @@ const (
 )
 
 func TestMutator_Mutate(t *testing.T) {
+	
 	cpu := resource.MustParse("1m")
 	memory := resource.MustParse("1Mi")
-	floor := &CPUMemory{
-		CPU:    &cpu,
-		Memory: &memory,
-	}
-	config := &Config{
-		LimitCPUToMemoryRatio:     2.0,
-		CpuRequestToLimitRatio:    0.25,
-		MemoryRequestToLimitRatio: 0.5,
-	}
-	mutator, err := NewMutator(config, floor, &CPUMemory{}, factor)
-	require.NoError(t, err)
-	require.NotNil(t, mutator)
+	
+	// Tests the mutator using CPURequestToLimitRatio as the CPU request override
+	t.Run("WithCpuRequestToLimitRatio", func(t *testing.T) {
+		floor := &CPUMemory{
+			CPU:    &cpu,
+			Memory: &memory,
+		}
+		config := &Config{
+			LimitCPUToMemoryRatio:     2.0,
+			CpuRequestToLimitRatio:    0.25,
+			MemoryRequestToLimitRatio: 0.5,
+			CpuRequestToRequestRatio:  0,
+		}
+		mutator, err := NewMutator(config, floor, &CPUMemory{}, factor)
+		require.NoError(t, err)
+		require.NotNil(t, mutator)
 
-	pod := &corev1.Pod{
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name: "db",
-					Resources: corev1.ResourceRequirements{
-						Limits: corev1.ResourceList{
-							corev1.ResourceMemory: resource.MustParse("16Gi"),
-							corev1.ResourceCPU:    resource.MustParse("8000m"),
+		pod := &corev1.Pod{
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "db",
+						Resources: corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("16Gi"),
+								corev1.ResourceCPU:    resource.MustParse("8000m"),
+							},
+						},
+					},
+					{
+						Name: "app",
+						Resources: corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("2Gi"),
+								corev1.ResourceCPU:    resource.MustParse("2000m"),
+							},
 						},
 					},
 				},
-				{
-					Name: "app",
-					Resources: corev1.ResourceRequirements{
-						Limits: corev1.ResourceList{
-							corev1.ResourceMemory: resource.MustParse("2Gi"),
-							corev1.ResourceCPU:    resource.MustParse("2000m"),
+				InitContainers: []corev1.Container{
+					{
+						Name: "init",
+						Resources: corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("1Gi"),
+								corev1.ResourceCPU:    resource.MustParse("1000m"),
+							},
 						},
 					},
 				},
 			},
-			InitContainers: []corev1.Container{
-				{
-					Name: "init",
-					Resources: corev1.ResourceRequirements{
-						Limits: corev1.ResourceList{
-							corev1.ResourceMemory: resource.MustParse("1Gi"),
-							corev1.ResourceCPU:    resource.MustParse("1000m"),
+		}
+
+		podGot, errGot := mutator.Mutate(pod)
+
+		assert.NoError(t, errGot)
+		assert.NotNil(t, podGot)
+
+		// verify init container
+		validate(t, podGot.Spec.InitContainers[0].Resources.Requests, corev1.ResourceMemory, resource.MustParse("512Mi"))
+		validate(t, podGot.Spec.InitContainers[0].Resources.Limits, corev1.ResourceCPU, resource.MustParse("2000m"))
+		validate(t, podGot.Spec.InitContainers[0].Resources.Requests, corev1.ResourceCPU, resource.MustParse("500m"))
+
+		// verify db container
+		validate(t, podGot.Spec.Containers[0].Resources.Requests, corev1.ResourceMemory, resource.MustParse("8Gi"))
+		validate(t, podGot.Spec.Containers[0].Resources.Limits, corev1.ResourceCPU, resource.MustParse("32000m"))
+		validate(t, podGot.Spec.Containers[0].Resources.Requests, corev1.ResourceCPU, resource.MustParse("8000m"))
+
+		// verify app container
+		validate(t, podGot.Spec.Containers[1].Resources.Requests, corev1.ResourceMemory, resource.MustParse("1Gi"))
+		validate(t, podGot.Spec.Containers[1].Resources.Limits, corev1.ResourceCPU, resource.MustParse("4000m"))
+		validate(t, podGot.Spec.Containers[1].Resources.Requests, corev1.ResourceCPU, resource.MustParse("1000m"))
+	})
+	
+	// Tests mutator using CPURequestToRequestRatio as the CPU resource override
+	// Ensures CPURequestToRequestRatio overwrites CPURequestToLimitRatio
+	// Ensures CPURequestToRequestRatio doesn't compute with request from CPURequestToLimitRatio
+	// Tests the per container annotations to ensure the mutator applies the override 
+	//   according to each container's original request
+	t.Run("WithCpuRequestToRequestRatio", func(t *testing.T) {
+		floor := &CPUMemory{
+			CPU:    &cpu,
+			Memory: &memory,
+		}
+		config := &Config{
+			LimitCPUToMemoryRatio:     2.0,
+			CpuRequestToLimitRatio:    0.25,
+			MemoryRequestToLimitRatio: 0.5,
+			CpuRequestToRequestRatio:  0.25,
+		}
+		mutator, err := NewMutator(config, floor, &CPUMemory{}, factor)
+		require.NoError(t, err)
+		require.NotNil(t, mutator)
+
+		pod := &corev1.Pod{
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "db",
+						Resources: corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("16Gi"),
+								corev1.ResourceCPU:    resource.MustParse("8000m"),
+							},
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("4Gi"),
+								corev1.ResourceCPU:    resource.MustParse("2000m"),
+							},
+						},
+					},
+					{
+						Name: "app",
+						Resources: corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("2Gi"),
+								corev1.ResourceCPU:    resource.MustParse("2000m"),
+							},
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("1Gi"),
+								corev1.ResourceCPU:    resource.MustParse("1000m"),
+							},
+						},
+					},
+				},
+				InitContainers: []corev1.Container{
+					{
+						Name: "init",
+						Resources: corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("1Gi"),
+								corev1.ResourceCPU:    resource.MustParse("1000m"),
+							},
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("512Mi"),
+								corev1.ResourceCPU:    resource.MustParse("500m"),
+							},
 						},
 					},
 				},
 			},
-		},
-	}
+		}
 
-	podGot, errGot := mutator.Mutate(pod)
+		podGot, errGot := mutator.Mutate(pod)
 
-	assert.NoError(t, errGot)
-	assert.NotNil(t, podGot)
+		assert.NoError(t, errGot)
+		assert.NotNil(t, podGot)
 
-	// verify init container
-	validate(t, podGot.Spec.InitContainers[0].Resources.Requests, corev1.ResourceMemory, resource.MustParse("512Mi"))
-	validate(t, podGot.Spec.InitContainers[0].Resources.Limits, corev1.ResourceCPU, resource.MustParse("2000m"))
-	validate(t, podGot.Spec.InitContainers[0].Resources.Requests, corev1.ResourceCPU, resource.MustParse("500m"))
+		// verify init container
+		validate(t, podGot.Spec.InitContainers[0].Resources.Requests, corev1.ResourceMemory, resource.MustParse("512Mi"))
+		validate(t, podGot.Spec.InitContainers[0].Resources.Limits, corev1.ResourceCPU, resource.MustParse("2000m"))
+		validate(t, podGot.Spec.InitContainers[0].Resources.Requests, corev1.ResourceCPU, resource.MustParse("125m"))
 
-	// verify db container
-	validate(t, podGot.Spec.Containers[0].Resources.Requests, corev1.ResourceMemory, resource.MustParse("8Gi"))
-	validate(t, podGot.Spec.Containers[0].Resources.Limits, corev1.ResourceCPU, resource.MustParse("32000m"))
-	validate(t, podGot.Spec.Containers[0].Resources.Requests, corev1.ResourceCPU, resource.MustParse("8000m"))
+		// verify db container
+		validate(t, podGot.Spec.Containers[0].Resources.Requests, corev1.ResourceMemory, resource.MustParse("8Gi"))
+		validate(t, podGot.Spec.Containers[0].Resources.Limits, corev1.ResourceCPU, resource.MustParse("32000m"))
+		validate(t, podGot.Spec.Containers[0].Resources.Requests, corev1.ResourceCPU, resource.MustParse("500m"))
 
-	// verify app container
-	validate(t, podGot.Spec.Containers[1].Resources.Requests, corev1.ResourceMemory, resource.MustParse("1Gi"))
-	validate(t, podGot.Spec.Containers[1].Resources.Limits, corev1.ResourceCPU, resource.MustParse("4000m"))
-	validate(t, podGot.Spec.Containers[1].Resources.Requests, corev1.ResourceCPU, resource.MustParse("1000m"))
+		// verify app container
+		validate(t, podGot.Spec.Containers[1].Resources.Requests, corev1.ResourceMemory, resource.MustParse("1Gi"))
+		validate(t, podGot.Spec.Containers[1].Resources.Limits, corev1.ResourceCPU, resource.MustParse("4000m"))
+		validate(t, podGot.Spec.Containers[1].Resources.Requests, corev1.ResourceCPU, resource.MustParse("250m"))
+	})
 }
 
 func TestMutator_OverrideMemory(t *testing.T) {
@@ -218,7 +314,401 @@ func TestMutator_OverrideMemory(t *testing.T) {
 	}
 }
 
-func TestMutator_OverrideCpu(t *testing.T) {
+func TestMutator_OverrideCPUWithRequest(t *testing.T) {
+	testContainerName := "test"
+	testAnnotation := fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, testContainerName)
+	tests := []struct {
+		name    string
+		pod *corev1.Pod
+		mutator func() *podMutator
+		input   *corev1.ResourceRequirements
+		assert  func(t *testing.T, resources *corev1.ResourceRequirements)
+	}{
+		{
+			// happy path
+			name: "WithCpuRequest",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name: "test",
+					Annotations: map[string]string{
+						testAnnotation: "2000m",
+					},
+				},
+			},
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0.25,
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceCPU, resource.MustParse("500m"))
+			},
+		},
+		{
+			// request annotation not present
+			name: "WithoutCpuRequest",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name: "test",
+				},
+			},
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0.25,
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				_, found := resources.Requests[corev1.ResourceCPU]
+				require.False(t, found, "expected no CPU request to be set")
+			},
+		},
+		{
+			// Ratio override value not set
+			name: "WithRatioValueZero",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name: "test",
+					Annotations: map[string]string{
+						testAnnotation: "2000m",
+					},
+				},
+			},
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0,
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				_, found := resources.Requests[corev1.ResourceCPU]
+				require.False(t, found, "expected no CPU request to be set")
+			},
+		},
+		{
+			// CPU request modified from previous override
+			// Regression test to ensure annotation is used to get request
+			name: "WithModifiedRequest",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name: "test",
+					Annotations: map[string]string{
+						testAnnotation: "2000m",
+					},
+				},
+			},
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0.25,
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("1000m"),
+				},
+			},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceCPU, resource.MustParse("500m"))
+			},
+		},
+		{
+			// Override is below the set floor
+			name: "WithOverrideBelowFloor",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name: "test",
+					Annotations: map[string]string{
+						testAnnotation: "1000m",
+					},
+				},
+			},
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0.25,
+					},
+					floor: &CPUMemory{
+						CPU: func() *resource.Quantity {
+							q := resource.MustParse("500m")
+							return &q
+						}(),
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceCPU, resource.MustParse("500m"))
+			},
+		},
+		{
+			// Override is above the set ceiling
+			name: "WithOverrideAboveCeiling",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name: "test",
+					Annotations: map[string]string{
+						testAnnotation: "2000m",
+					},
+				},
+			},
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0.5,
+					},
+					ceiling: &CPUMemory{
+						CPU: func() *resource.Quantity {
+							q := resource.MustParse("500m")
+							return &q
+						}(),
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceCPU, resource.MustParse("500m"))
+			},
+		},
+		{
+			// Override inbetween the set ceiling and floor
+			name: "WithOverrideBetweenFloorCeiling",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name: "test",
+					Annotations: map[string]string{
+						testAnnotation: "1000m",
+					},
+				},
+			},
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0.5,
+					},
+					ceiling: &CPUMemory{
+						CPU: func() *resource.Quantity {
+							q := resource.MustParse("1000m")
+							return &q
+						}(),
+					},
+					floor: &CPUMemory{
+						CPU: func() *resource.Quantity {
+							q := resource.MustParse("250m")
+							return &q
+						}(),
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceCPU, resource.MustParse("500m"))
+			},
+		},
+		{
+			// Annotation value is "0", should be a no-op
+			name: "WithZeroAnnotationValue",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name:      "test",
+					Annotations: map[string]string{
+						testAnnotation: "0",
+					},
+				},
+			},
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0.25,
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				_, found := resources.Requests[corev1.ResourceCPU]
+				require.False(t, found, "expected no CPU request to be set")
+			},
+		},
+		{
+			// Container has limits but no request at all, no annotation set.
+			// CpuRequestToRequestRatio is configured but should be a no-op.
+			name: "WithNoRequestAndNoAnnotation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name:      "test",
+				},
+			},
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0.25,
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("2Gi"),
+					corev1.ResourceCPU:    resource.MustParse("2000m"),
+				},
+			},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				// verify limits are unchanged
+				validate(t, resources.Limits, corev1.ResourceMemory, resource.MustParse("2Gi"))
+				validate(t, resources.Limits, corev1.ResourceCPU, resource.MustParse("2000m"))
+				// verify no requests were created
+				_, found := resources.Requests[corev1.ResourceCPU]
+				require.False(t, found, "expected no CPU request to be set")
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			target := test.mutator()
+
+			target.OverrideCPUWithRequest(test.input, testContainerName, test.pod)
+
+			test.assert(t, test.input)
+		})
+	}
+}
+
+func TestMutator_AnnotateOriginalRequest(t *testing.T) {
+	containerName := "mycontainer"
+	annotationKey := fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, containerName)
+
+	tests := []struct {
+		name    string
+		mutator func() *podMutator
+		input   *corev1.ResourceRequirements
+		pod     *corev1.Pod
+		assert  func(t *testing.T, pod *corev1.Pod)
+	}{
+		{
+			// Annotation is written with the correct per-container key
+			name: "PerContainerAnnotation",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0.25,
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("500m"),
+				},
+			},
+			pod: &corev1.Pod{},
+			assert: func(t *testing.T, pod *corev1.Pod) {
+				val, found := pod.Annotations[annotationKey]
+				require.True(t, found, "expected per-container annotation to be set")
+				require.Equal(t, "500m", val)
+			},
+		},
+		{
+			// Second container does not overwrite first container's annotation
+			name: "MultipleContainersGetSeparateAnnotations",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						CpuRequestToRequestRatio: 0.25,
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("200m"),
+				},
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, "other"): "1000m",
+					},
+				},
+			},
+			assert: func(t *testing.T, pod *corev1.Pod) {
+				otherKey := fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, "other")
+				otherVal, otherFound := pod.Annotations[otherKey]
+				require.True(t, otherFound, "expected other container annotation to remain")
+				require.Equal(t, "1000m", otherVal)
+
+				val, found := pod.Annotations[annotationKey]
+				require.True(t, found, "expected this container annotation to be set")
+				require.Equal(t, "200m", val)
+			},
+		},
+		{
+			// No CPU request means no annotation is written
+			name: "ZeroRequestSkipsAnnotation",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{},
+				}
+			},
+			input: &corev1.ResourceRequirements{},
+			pod:   &corev1.Pod{},
+			assert: func(t *testing.T, pod *corev1.Pod) {
+				_, found := pod.Annotations[annotationKey]
+				require.False(t, found, "expected no annotation for zero request")
+			},
+		},
+		{
+			// Existing annotation is not overwritten on reinvocation
+			name: "ExistingAnnotationNotOverwritten",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{},
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("1000m"),
+				},
+			},
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						annotationKey: "500m",
+					},
+				},
+			},
+			assert: func(t *testing.T, pod *corev1.Pod) {
+				val, found := pod.Annotations[annotationKey]
+				require.True(t, found)
+				require.Equal(t, "500m", val, "expected original annotation to be preserved")
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			target := test.mutator()
+			target.AnnotateOriginalRequest(test.input, containerName, test.pod)
+			test.assert(t, test.pod)
+		})
+	}
+}
+
+func TestMutator_OverrideCpuWithLimit(t *testing.T) {
 	tests := []struct {
 		name    string
 		mutator func() *podMutator
@@ -323,7 +813,7 @@ func TestMutator_OverrideCpu(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			target := test.mutator()
 
-			target.OverrideCPU(test.input)
+			target.OverrideCPUWithLimit(test.input)
 
 			test.assert(t, test.input)
 		})

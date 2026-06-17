@@ -12,6 +12,7 @@ func TestConvertExternalConfig(t *testing.T) {
 			LimitCPUToMemoryPercent:     400,
 			CPURequestToLimitPercent:    25,
 			MemoryRequestToLimitPercent: 50,
+			CPURequestToRequestPercent:  25,
 		},
 	}
 
@@ -20,6 +21,7 @@ func TestConvertExternalConfig(t *testing.T) {
 	assert.Equal(t, 4.0, configGot.LimitCPUToMemoryRatio)
 	assert.Equal(t, 0.25, configGot.CpuRequestToLimitRatio)
 	assert.Equal(t, 0.50, configGot.MemoryRequestToLimitRatio)
+	assert.Equal(t, 0.25, configGot.CpuRequestToRequestRatio)
 }
 
 func TestDecodeWithFile(t *testing.T) {
@@ -38,6 +40,7 @@ func TestDecodeWithFile(t *testing.T) {
 				assert.Equal(t, int64(25), objGot.Spec.MemoryRequestToLimitPercent)
 				assert.Equal(t, int64(50), objGot.Spec.CPURequestToLimitPercent)
 				assert.Equal(t, int64(200), objGot.Spec.LimitCPUToMemoryPercent)
+				assert.Equal(t, int64(25), objGot.Spec.CPURequestToRequestPercent)
 			},
 		},
 	}

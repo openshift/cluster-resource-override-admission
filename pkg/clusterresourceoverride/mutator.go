@@ -44,11 +44,11 @@ func (m *podMutator) Mutate(in *corev1.Pod) (out *corev1.Pod, err error) {
 	}
 
 	for i := range current.Spec.InitContainers {
-		m.Override(&current.Spec.InitContainers[i])
+		m.Override(&current.Spec.InitContainers[i], current)
 	}
 
 	for i := range current.Spec.Containers {
-		m.Override(&current.Spec.Containers[i])
+		m.Override(&current.Spec.Containers[i], current)
 	}
 
 	out = current
@@ -56,9 +56,10 @@ func (m *podMutator) Mutate(in *corev1.Pod) (out *corev1.Pod, err error) {
 }
 
 const (
-	SpcType                = "spc_t"
-	SelinuxRelabelResource = "forceselinuxrelabel"
-	SelinuxRelabelGroup    = "admission.node.openshift.io"
+	SpcType                      = "spc_t"
+	SelinuxRelabelResource       = "forceselinuxrelabel"
+	SelinuxRelabelGroup          = "admission.node.openshift.io"
+	OriginalCPURequestAnnotation = "clusterresourceoverrides.admission.autoscaling.openshift.io/original-cpu-request"
 )
 
 var (
@@ -90,13 +91,42 @@ func (m *podMutator) OverrideForceSelinuxRelabel(pod *corev1.Pod) {
 	pod.Spec.SecurityContext.SELinuxOptions = &corev1.SELinuxOptions{Type: SpcType}
 }
 
-func (m *podMutator) Override(container *corev1.Container) {
+func (m *podMutator) Override(container *corev1.Container, current *corev1.Pod) {
+	// Needs to run before an override modifies the request
+	m.AnnotateOriginalRequest(&container.Resources, container.Name, current)
+
 	m.OverrideMemory(&container.Resources)
 
 	// The order is important here, this is processed prior to overriding CPU request.
 	m.OverrideCPULimit(&container.Resources)
 
-	m.OverrideCPU(&container.Resources)
+	m.OverrideCPUWithLimit(&container.Resources)
+
+	// Should run after OverrideCPUWithLimit
+	m.OverrideCPUWithRequest(&container.Resources, container.Name, current)
+}
+
+// Annotates pod with original CPU request value. Annotation provides idempotency for
+// OverrideCPUWithRequest in case of reinvocation. Also preserves original value in case
+// of OverrideCPUWithLimit modifying the request prior to OverrideCPUWithRequest.
+func (m *podMutator) AnnotateOriginalRequest(resources *corev1.ResourceRequirements, name string, pod *corev1.Pod) {
+	if m.config.CpuRequestToRequestRatio == 0 {
+		return
+	}
+
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+
+	key := fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, name)
+	_, found := pod.Annotations[key]
+	if !found {
+		request := resources.Requests[corev1.ResourceCPU]
+		if request.IsZero() {
+			return
+		}
+		pod.Annotations[key] = request.String()
+	}
 }
 
 // If a container memory limit has been specified or defaulted, the memory request
@@ -182,7 +212,7 @@ func (m *podMutator) OverrideCPULimit(resources *corev1.ResourceRequirements) {
 
 // If a container CPU limit has been specified or defaulted, the CPU request is
 // overridden to this percentage of the limit.
-func (m *podMutator) OverrideCPU(resources *corev1.ResourceRequirements) {
+func (m *podMutator) OverrideCPUWithLimit(resources *corev1.ResourceRequirements) {
 	limit, found := resources.Limits[corev1.ResourceCPU]
 	if !found {
 		return
@@ -196,13 +226,56 @@ func (m *podMutator) OverrideCPU(resources *corev1.ResourceRequirements) {
 	overridden := resource.NewMilliQuantity(int64(amount), limit.Format)
 
 	if m.IsCpuFloorSpecified() && overridden.Cmp(*m.floor.CPU) < 0 {
-		klog.V(5).Infof("%s pod limit %q below namespace limit; setting limit to %q", corev1.ResourceCPU, overridden.String(), m.floor.CPU.String())
+		klog.V(5).Infof("%s pod request %q below namespace minimum; setting request to %q", corev1.ResourceCPU, overridden.String(), m.floor.CPU.String())
 		clone := m.floor.CPU.DeepCopy()
 		overridden = &clone
 	}
 
 	if m.IsCpuCeilingSpecified() && overridden.Cmp(*m.ceiling.CPU) > 0 {
-		klog.V(5).Infof("%s pod limit %q above namespace limit; setting limit to %q", corev1.ResourceCPU, overridden.String(), m.ceiling.CPU.String())
+		klog.V(5).Infof("%s pod request %q above namespace maximum; setting request to %q", corev1.ResourceCPU, overridden.String(), m.ceiling.CPU.String())
+		clone := m.ceiling.CPU.DeepCopy()
+		overridden = &clone
+	}
+
+	ensureRequests(resources)
+	resources.Requests[corev1.ResourceCPU] = *overridden
+}
+
+// If a container CPU limit has not been specified or defaulted, the CPU request is
+// overridden to this percentage of the original request (stored in a pod annotation).
+func (m *podMutator) OverrideCPUWithRequest(resources *corev1.ResourceRequirements, name string, pod *corev1.Pod) {
+	if m.config.CpuRequestToRequestRatio == 0 {
+		return
+	}
+
+	key := fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, name)
+	strValue, found := pod.Annotations[key]
+	if !found {
+		klog.Warningf("failed to find %q annotation for pod %s/%s; skipping CPU request override", key, pod.Namespace, pod.Name)
+		return
+	}
+
+	request, err := resource.ParseQuantity(strValue)
+	if err != nil {
+		klog.Warningf("failed to parse %q annotation for pod %s/%s: %v; skipping CPU request override", key, pod.Namespace, pod.Name, err)
+		return
+	}
+
+	if request.IsZero() {
+		return
+	}
+
+	amount := float64(request.MilliValue()) * m.config.CpuRequestToRequestRatio
+	overridden := resource.NewMilliQuantity(int64(amount), request.Format)
+
+	if m.IsCpuFloorSpecified() && overridden.Cmp(*m.floor.CPU) < 0 {
+		klog.V(5).Infof("%s pod request %q below namespace minimum; setting request to %q", corev1.ResourceCPU, overridden.String(), m.floor.CPU.String())
+		clone := m.floor.CPU.DeepCopy()
+		overridden = &clone
+	}
+
+	if m.IsCpuCeilingSpecified() && overridden.Cmp(*m.ceiling.CPU) > 0 {
+		klog.V(5).Infof("%s pod request %q above namespace maximum; setting request to %q", corev1.ResourceCPU, overridden.String(), m.ceiling.CPU.String())
 		clone := m.ceiling.CPU.DeepCopy()
 		overridden = &clone
 	}
