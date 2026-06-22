@@ -34,6 +34,10 @@ type ClusterResourceOverrideSpec struct {
 
 	// MemoryRequestToLimitPercent (if > 0) overrides memory request to a percentage of memory limit
 	MemoryRequestToLimitPercent int64 `json:"memoryRequestToLimitPercent"`
+
+	// CPURequestToRequestPercent (if > 0) overrides CPU request to a percentage of the
+	// existing CPU request.
+	CPURequestToRequestPercent int64 `json:"cpuRequestToRequestPercent"`
 }
 
 type Config struct {
@@ -41,11 +45,12 @@ type Config struct {
 	LimitCPUToMemoryRatio     float64
 	CpuRequestToLimitRatio    float64
 	MemoryRequestToLimitRatio float64
+	CpuRequestToRequestRatio  float64
 }
 
 func (c *Config) String() string {
-	return fmt.Sprintf("LimitCPUToMemoryRatio=%f CpuRequestToLimitRatio=%f MemoryRequestToLimitRatio=%f ForceSelinuxRelabel=%v",
-		c.LimitCPUToMemoryRatio, c.CpuRequestToLimitRatio, c.MemoryRequestToLimitRatio, c.ForceSelinuxRelabel)
+	return fmt.Sprintf("LimitCPUToMemoryRatio=%f CpuRequestToLimitRatio=%f MemoryRequestToLimitRatio=%f CpuRequestToRequestRatio=%f ForceSelinuxRelabel=%v",
+		c.LimitCPUToMemoryRatio, c.CpuRequestToLimitRatio, c.MemoryRequestToLimitRatio, c.CpuRequestToRequestRatio, c.ForceSelinuxRelabel)
 }
 
 func ConvertExternalConfig(object *ClusterResourceOverride) *Config {
@@ -54,6 +59,7 @@ func ConvertExternalConfig(object *ClusterResourceOverride) *Config {
 		LimitCPUToMemoryRatio:     float64(object.Spec.LimitCPUToMemoryPercent) / 100,
 		CpuRequestToLimitRatio:    float64(object.Spec.CPURequestToLimitPercent) / 100,
 		MemoryRequestToLimitRatio: float64(object.Spec.MemoryRequestToLimitPercent) / 100,
+		CpuRequestToRequestRatio:  float64(object.Spec.CPURequestToRequestPercent) / 100,
 	}
 }
 
@@ -73,10 +79,15 @@ func Decode(reader io.Reader) (object *ClusterResourceOverride, err error) {
 
 func DecodeWithFile(path string) (object *ClusterResourceOverride, err error) {
 	reader, openErr := os.Open(path)
-	if err != nil {
+	if openErr != nil {
 		err = fmt.Errorf("unable to load file %s: %s", path, openErr)
 		return
 	}
+	defer func() {
+		if closeErr := reader.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("unable to close file %s: %w", path, closeErr)
+		}
+	}()
 
 	object, err = Decode(reader)
 	return

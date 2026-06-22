@@ -4,3 +4,4 @@ spec:
   memoryRequestToLimitPercent: 25
   cpuRequestToLimitPercent: 50
   limitCPUToMemoryPercent: 200
+  cpuRequestToRequestPercent: 25

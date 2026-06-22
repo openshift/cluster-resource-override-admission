@@ -26,6 +26,7 @@ spec:
   memoryRequestToLimitPercent: 50
   cpuRequestToLimitPercent: 25
   limitCPUToMemoryPercent: 200
+  cpuRequestToRequestPercent: 25
 ```
 
 `ClusterResourceOverride` admission webhook server loads the configuration file when it starts. 
