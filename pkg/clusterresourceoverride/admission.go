@@ -14,8 +14,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 
 	"github.com/openshift/cluster-resource-override-admission/pkg/api"
@@ -128,12 +131,25 @@ func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, c
 		return
 	}
 
+	roLister := NewResourceOverrideListerOrNil(kubeClientConfig, stopCh)
+
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartStructuredLogging(0)
+	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{
+		Interface: client.CoreV1().Events(""),
+	})
+	eventRecorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{
+		Component: "clusterresourceoverride-admission",
+	})
+
 	admission = &clusterResourceOverrideAdmission{
 		config:   config,
 		nsLister: namespaces.Lister(),
 		limitQuerier: &namespaceLimitQuerier{
 			limitRangesLister: limitRanges.Lister(),
 		},
+		roLister: roLister,
+		resolver: NewOverrideResolver(roLister, config, eventRecorder),
 	}
 
 	return
@@ -167,6 +183,8 @@ type clusterResourceOverrideAdmission struct {
 	config       *Config
 	nsLister     corev1listers.NamespaceLister
 	limitQuerier *namespaceLimitQuerier
+	roLister     ResourceOverrideLister
+	resolver     *OverrideResolver
 }
 
 func (p *clusterResourceOverrideAdmission) GetConfiguration() *Config {
@@ -236,7 +254,12 @@ func (p *clusterResourceOverrideAdmission) Admit(request *admissionv1.AdmissionR
 
 	klog.V(5).Infof("namespace=%s initial pod: initContainers=%#v containers=%#v", request.Namespace, pod.Spec.InitContainers, pod.Spec.Containers)
 
-	mutator, err := NewMutator(p.config, setNamespaceFloor(nsMinimum), nsMaximum, cpuBaseScaleFactor)
+	effectiveConfig := p.config
+	if p.resolver != nil {
+		effectiveConfig = p.resolver.ResolveConfig(request.Namespace, pod)
+	}
+
+	mutator, err := NewMutator(effectiveConfig, setNamespaceFloor(nsMinimum), nsMaximum, cpuBaseScaleFactor)
 	if err != nil {
 		return admissionresponse.WithInternalServerError(request, err)
 	}

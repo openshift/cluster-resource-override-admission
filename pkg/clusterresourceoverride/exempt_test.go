@@ -39,6 +39,54 @@ func TestIsNamespaceExempt(t *testing.T) {
 			name: "kube-dns",
 			want: true,
 		},
+		{
+			name: "",
+			want: false,
+		},
+		{
+			name: "default",
+			want: false,
+		},
+		{
+			name: "my-app",
+			want: false,
+		},
+		{
+			name: "Openshift",
+			want: false,
+		},
+		{
+			name: "KUBE",
+			want: false,
+		},
+		{
+			name: "Kubernetes",
+			want: false,
+		},
+		{
+			name: "openshiftfoo",
+			want: false,
+		},
+		{
+			name: "kubefoo",
+			want: false,
+		},
+		{
+			name: "my-kube-system",
+			want: false,
+		},
+		{
+			name: "not-openshift-but-contains-it",
+			want: false,
+		},
+		{
+			name: "openshift-",
+			want: true,
+		},
+		{
+			name: "kube-",
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {
