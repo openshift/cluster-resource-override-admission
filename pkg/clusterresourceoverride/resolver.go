@@ -18,12 +18,14 @@ var resourceOverrideGVK = schema.GroupVersionKind{
 	Kind:    "ResourceOverride",
 }
 
+// OverrideResolver resolves the effective override config for a pod by matching ResourceOverride objects.
 type OverrideResolver struct {
 	lister        ResourceOverrideLister
 	clusterConfig *Config
 	recorder      record.EventRecorder
 }
 
+// NewOverrideResolver creates a resolver that selects a ResourceOverride or falls back to the cluster config.
 func NewOverrideResolver(lister ResourceOverrideLister, clusterConfig *Config, recorder record.EventRecorder) *OverrideResolver {
 	return &OverrideResolver{
 		lister:        lister,
@@ -32,6 +34,7 @@ func NewOverrideResolver(lister ResourceOverrideLister, clusterConfig *Config, r
 	}
 }
 
+// ResolveConfig returns the override config for the given pod, falling back to the cluster config when no ResourceOverride matches.
 func (r *OverrideResolver) ResolveConfig(namespace string, pod *corev1.Pod) *Config {
 	if r.lister == nil {
 		klog.V(5).Infof("namespace=%s ResourceOverride lister is nil, using ClusterResourceOverride config", namespace)

@@ -119,7 +119,7 @@ func TestIsApplicable_NonPodResourceNotApplicable(t *testing.T) {
 func newFakeNamespaceLister(namespaces ...*corev1.Namespace) corev1listers.NamespaceLister {
 	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
 	for _, ns := range namespaces {
-		indexer.Add(ns)
+		_ = indexer.Add(ns)
 	}
 	return corev1listers.NewNamespaceLister(indexer)
 }
@@ -547,7 +547,7 @@ func newFakeLimitRangeListerWithRange(namespace string, min, max resource.Quanti
 			},
 		},
 	}
-	indexer.Add(lr)
+	_ = indexer.Add(lr)
 	return corev1listers.NewLimitRangeLister(indexer)
 }
 

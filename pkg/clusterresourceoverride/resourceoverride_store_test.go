@@ -48,7 +48,7 @@ func makeUnstructuredRO(namespace, name string, podSelector *metav1.LabelSelecto
 	if podSelector != nil {
 		selectorBytes, _ := json.Marshal(podSelector)
 		var selectorMap interface{}
-		json.Unmarshal(selectorBytes, &selectorMap)
+		_ = json.Unmarshal(selectorBytes, &selectorMap)
 		obj["spec"].(map[string]interface{})["podSelector"] = selectorMap
 	}
 	return &unstructured.Unstructured{Object: obj}
@@ -59,7 +59,7 @@ func newTestLister(objects ...*unstructured.Unstructured) *resourceOverrideListe
 		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
 	})
 	for _, obj := range objects {
-		indexer.Add(obj)
+		_ = indexer.Add(obj)
 	}
 	return &resourceOverrideLister{indexer: indexer}
 }
@@ -173,8 +173,8 @@ func TestListByNamespace_NonUnstructuredItemSkipped(t *testing.T) {
 	valid := makeUnstructuredRO("test-ns", "good-ro", nil, ClusterResourceOverrideSpec{
 		CPURequestToLimitPercent: 30,
 	})
-	indexer.Add(valid)
-	indexer.Add("not-an-unstructured-object")
+	_ = indexer.Add(valid)
+	_ = indexer.Add("not-an-unstructured-object")
 	store := &resourceOverrideLister{indexer: indexer}
 
 	results, err := store.ListByNamespace("test-ns")

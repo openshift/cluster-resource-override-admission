@@ -28,6 +28,7 @@ var resourceOverrideGVR = schema.GroupVersionResource{
 	Resource: "resourceoverrides",
 }
 
+// ResourceOverrideView is a decoded representation of a ResourceOverride CR from the informer cache.
 type ResourceOverrideView struct {
 	Namespace string
 	Name      string
@@ -36,6 +37,7 @@ type ResourceOverrideView struct {
 	Spec      ClusterResourceOverrideSpec
 }
 
+// ResourceOverrideLister lists ResourceOverride objects from the informer cache.
 type ResourceOverrideLister interface {
 	ListByNamespace(namespace string) ([]ResourceOverrideView, error)
 }
@@ -44,6 +46,7 @@ type resourceOverrideLister struct {
 	indexer cache.Indexer
 }
 
+// NewResourceOverrideLister starts the ResourceOverride informer and blocks until cache sync or timeout.
 func NewResourceOverrideLister(
 	dynFactory dynamicinformer.DynamicSharedInformerFactory,
 	stopCh <-chan struct{},
@@ -83,6 +86,7 @@ func waitForCacheSyncOrTimeout(stopCh <-chan struct{}, timeout time.Duration, ha
 	return cache.WaitForCacheSync(bounded, hasSynced)
 }
 
+// NewResourceOverrideListerOrNil returns a ResourceOverrideLister or nil if the CRD is missing or unreachable.
 func NewResourceOverrideListerOrNil(kubeClientConfig *restclient.Config, stopCh <-chan struct{}) ResourceOverrideLister {
 	dynClient, err := dynamic.NewForConfig(kubeClientConfig)
 	if err != nil {
@@ -100,6 +104,7 @@ func NewResourceOverrideListerOrNil(kubeClientConfig *restclient.Config, stopCh 
 	return store
 }
 
+// ListByNamespace returns decoded ResourceOverride objects in the given namespace, skipping exempt namespaces and malformed entries.
 func (s *resourceOverrideLister) ListByNamespace(namespace string) ([]ResourceOverrideView, error) {
 	if s == nil || s.indexer == nil {
 		return nil, nil
