@@ -93,25 +93,25 @@ func NewInClusterAdmission(kubeClientConfig *restclient.Config, stopCh <-chan st
 	return NewAdmission(kubeClientConfig, stopCh, configLoader)
 }
 
-// NewInClusterAdmission returns a new instance of Admission that is appropriate
-// to be consumed in cluster.
+// NewAdmission constructs an Admission using the supplied configuration loader.
 func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, configLoaderFunc ConfigLoaderFunc) (admission Admission, err error) {
 	config, configLoadErr := configLoaderFunc()
 	if configLoadErr != nil {
-		err = fmt.Errorf("name=%s failed to load configuration - %s", Name, configLoadErr.Error())
+		err = fmt.Errorf("name=%s failed to load configuration: %w", Name, configLoadErr)
 		return
 	}
-	// Validate here rather than in a particular loader: NewAdmission is the single
-	// boundary every ConfigLoaderFunc passes through, so a programmatic loader (the only
-	// source that can produce a non-finite or out-of-range ratio, since the configuration
-	// file's percentages are int64) cannot bypass it. This runs before the client is
-	// built, so an invalid configuration fails fast without contacting the API server.
+	// Validate here rather than in a particular loader: NewAdmission is the common boundary
+	// every ConfigLoaderFunc passes through. A file-backed loader can produce an out-of-range
+	// ratio (for example a 101% percentage), and a programmatic loader can additionally
+	// produce a non-finite one; validating here means neither can bypass the check. This runs
+	// before the client is built, so an invalid configuration fails fast without contacting
+	// the API server.
 	if config == nil {
 		err = fmt.Errorf("name=%s failed to load configuration - loader returned nil config", Name)
 		return
 	}
 	if validateErr := config.Validate(); validateErr != nil {
-		err = fmt.Errorf("name=%s invalid configuration - %s", Name, validateErr.Error())
+		err = fmt.Errorf("name=%s invalid configuration: %w", Name, validateErr)
 		return
 	}
 

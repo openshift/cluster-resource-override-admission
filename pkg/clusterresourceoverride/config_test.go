@@ -67,9 +67,10 @@ func TestConfigValidate(t *testing.T) {
 
 	// Accepted. The three request ratios are valid across the whole [0,1] range.
 	// LimitCPUToMemoryRatio has no upper bound: it mirrors the operator CRD, which only
-	// requires >= 0, so an arbitrarily large finite value is accepted here (and saturated
-	// by the CPU arithmetic downstream) rather than rejected at a bound the operator would
-	// not enforce.
+	// requires >= 0, so a large value (up to what the int64 external percentage can express)
+	// is accepted here rather than rejected at a bound the operator would not enforce. This
+	// PR validates the configured ranges only; overflow-safe arithmetic for a large
+	// CPU-to-memory percentage is handled in #113.
 	accepted := []struct {
 		name   string
 		mutate func(*Config)
@@ -82,7 +83,7 @@ func TestConfigValidate(t *testing.T) {
 			c.CpuRequestToLimitRatio, c.CpuRequestToRequestRatio, c.MemoryRequestToLimitRatio = 1, 1, 1
 		}},
 		{"limit-to-memory ratio zero", func(c *Config) { c.LimitCPUToMemoryRatio = 0 }},
-		{"limit-to-memory ratio very large finite", func(c *Config) { c.LimitCPUToMemoryRatio = math.MaxFloat64 }},
+		{"limit-to-memory ratio at the external maximum", func(c *Config) { c.LimitCPUToMemoryRatio = float64(math.MaxInt64) / 100 }},
 	}
 	for _, tc := range accepted {
 		t.Run("accepted/"+tc.name, func(t *testing.T) {
@@ -92,8 +93,8 @@ func TestConfigValidate(t *testing.T) {
 		})
 	}
 
-	// Rejected. Each error names the offending field so an operator can locate it in the
-	// configuration file.
+	// Rejected. Each error names the offending internal ratio field (not the YAML percentage
+	// key it was derived from).
 	rejected := []struct {
 		name   string
 		field  string
