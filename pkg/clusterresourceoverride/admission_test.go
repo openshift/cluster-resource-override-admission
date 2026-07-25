@@ -1,6 +1,8 @@
 package clusterresourceoverride
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,6 +13,45 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 )
+
+func TestNewAdmissionValidatesConfiguration(t *testing.T) {
+	// NewAdmission is the single boundary every ConfigLoaderFunc passes through, so an
+	// invalid config must be rejected there, before any API client is built, regardless of
+	// which loader produced it.
+	t.Run("rejects an out-of-range ratio", func(t *testing.T) {
+		loader := func() (*Config, error) {
+			return &Config{CpuRequestToLimitRatio: 1.5}, nil
+		}
+		admission, err := NewAdmission(nil, nil, loader)
+		require.Error(t, err)
+		require.Nil(t, admission)
+		assert.Contains(t, err.Error(), "invalid configuration")
+		assert.Contains(t, err.Error(), "cpuRequestToLimitRatio")
+	})
+
+	t.Run("rejects a nil config from the loader", func(t *testing.T) {
+		loader := func() (*Config, error) { return nil, nil }
+		admission, err := NewAdmission(nil, nil, loader)
+		require.Error(t, err)
+		require.Nil(t, admission)
+		assert.Contains(t, err.Error(), "nil config")
+	})
+}
+
+func TestNewInClusterAdmissionRejectsInvalidConfigFile(t *testing.T) {
+	// A hand-edited configuration file with an out-of-range percentage must fail startup
+	// before the API client is created, so no cluster is needed here.
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := "apiVersion: v1\nkind: ClusterResourceOverrideConfig\nspec:\n  cpuRequestToLimitPercent: 101\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	t.Setenv(configurationEnvName, path)
+
+	admission, err := NewInClusterAdmission(nil, nil)
+	require.Error(t, err)
+	require.Nil(t, admission)
+	assert.Contains(t, err.Error(), "invalid configuration")
+	assert.Contains(t, err.Error(), "cpuRequestToLimitRatio")
+}
 
 func TestSetNamespaceFloor(t *testing.T) {
 	cpu := resource.MustParse("1000m")

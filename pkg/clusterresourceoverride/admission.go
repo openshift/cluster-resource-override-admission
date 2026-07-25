@@ -101,6 +101,19 @@ func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, c
 		err = fmt.Errorf("name=%s failed to load configuration - %s", Name, configLoadErr.Error())
 		return
 	}
+	// Validate here rather than in a particular loader: NewAdmission is the single
+	// boundary every ConfigLoaderFunc passes through, so a programmatic loader (the only
+	// source that can produce a non-finite or out-of-range ratio, since the configuration
+	// file's percentages are int64) cannot bypass it. This runs before the client is
+	// built, so an invalid configuration fails fast without contacting the API server.
+	if config == nil {
+		err = fmt.Errorf("name=%s failed to load configuration - loader returned nil config", Name)
+		return
+	}
+	if validateErr := config.Validate(); validateErr != nil {
+		err = fmt.Errorf("name=%s invalid configuration - %s", Name, validateErr.Error())
+		return
+	}
 
 	client, clientErr := kubernetes.NewForConfig(kubeClientConfig)
 	if clientErr != nil {

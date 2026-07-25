@@ -3,6 +3,7 @@ package clusterresourceoverride
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,6 +52,31 @@ type Config struct {
 func (c *Config) String() string {
 	return fmt.Sprintf("LimitCPUToMemoryRatio=%f CpuRequestToLimitRatio=%f MemoryRequestToLimitRatio=%f CpuRequestToRequestRatio=%f ForceSelinuxRelabel=%v",
 		c.LimitCPUToMemoryRatio, c.CpuRequestToLimitRatio, c.MemoryRequestToLimitRatio, c.CpuRequestToRequestRatio, c.ForceSelinuxRelabel)
+}
+
+// Validate rejects a Config whose ratios are not finite and in range so an
+// invalid configuration (for example a hand-edited configuration file the
+// operator did not produce) fails fast at load time instead of silently
+// producing wrong requests at admission. The three request ratios are fractions
+// of another value and must be in [0,1]; LimitCPUToMemoryRatio scales memory to
+// CPU (100% is 1 core per GiB) and only has to be finite and non-negative.
+func (c *Config) Validate() error {
+	for _, r := range []struct {
+		name  string
+		ratio float64
+	}{
+		{"cpuRequestToLimitRatio", c.CpuRequestToLimitRatio},
+		{"cpuRequestToRequestRatio", c.CpuRequestToRequestRatio},
+		{"memoryRequestToLimitRatio", c.MemoryRequestToLimitRatio},
+	} {
+		if math.IsNaN(r.ratio) || math.IsInf(r.ratio, 0) || r.ratio < 0 || r.ratio > 1 {
+			return fmt.Errorf("%s must be a finite value in [0,1], got %v", r.name, r.ratio)
+		}
+	}
+	if r := c.LimitCPUToMemoryRatio; math.IsNaN(r) || math.IsInf(r, 0) || r < 0 {
+		return fmt.Errorf("limitCPUToMemoryRatio must be a finite non-negative value, got %v", r)
+	}
+	return nil
 }
 
 func ConvertExternalConfig(object *ClusterResourceOverride) *Config {
