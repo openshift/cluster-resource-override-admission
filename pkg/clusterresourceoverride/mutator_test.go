@@ -2,13 +2,16 @@ package clusterresourceoverride
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	apivalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
 const (
@@ -16,10 +19,10 @@ const (
 )
 
 func TestMutator_Mutate(t *testing.T) {
-	
+
 	cpu := resource.MustParse("1m")
 	memory := resource.MustParse("1Mi")
-	
+
 	// Tests the mutator using CPURequestToLimitRatio as the CPU request override
 	t.Run("WithCpuRequestToLimitRatio", func(t *testing.T) {
 		floor := &CPUMemory{
@@ -92,11 +95,11 @@ func TestMutator_Mutate(t *testing.T) {
 		validate(t, podGot.Spec.Containers[1].Resources.Limits, corev1.ResourceCPU, resource.MustParse("4000m"))
 		validate(t, podGot.Spec.Containers[1].Resources.Requests, corev1.ResourceCPU, resource.MustParse("1000m"))
 	})
-	
+
 	// Tests mutator using CPURequestToRequestRatio as the CPU resource override
 	// Ensures CPURequestToRequestRatio overwrites CPURequestToLimitRatio
 	// Ensures CPURequestToRequestRatio doesn't compute with request from CPURequestToLimitRatio
-	// Tests the per container annotations to ensure the mutator applies the override 
+	// Tests the per container annotations to ensure the mutator applies the override
 	//   according to each container's original request
 	t.Run("WithCpuRequestToRequestRatio", func(t *testing.T) {
 		floor := &CPUMemory{
@@ -319,7 +322,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 	testAnnotation := fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, testContainerName)
 	tests := []struct {
 		name    string
-		pod *corev1.Pod
+		pod     *corev1.Pod
 		mutator func() *podMutator
 		input   *corev1.ResourceRequirements
 		assert  func(t *testing.T, resources *corev1.ResourceRequirements)
@@ -330,7 +333,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -354,7 +357,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 				},
 			},
 			mutator: func() *podMutator {
@@ -376,7 +379,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -402,7 +405,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -430,7 +433,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "1000m",
 					},
@@ -460,7 +463,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -490,7 +493,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "1000m",
 					},
@@ -1084,4 +1087,56 @@ func validate(t *testing.T, list corev1.ResourceList, name corev1.ResourceName, 
 
 	result := got.Equal(want)
 	require.True(t, result, "mutated, expected: %v, got %v", want, got)
+}
+
+func TestMutator_OriginalCPURequestKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		container  string
+		wantHashed bool
+	}{
+		{"short readable name", "app", false},
+		{"largest readable name", strings.Repeat("a", 42), false},
+		{"first hashed name", strings.Repeat("a", 43), true},
+		{"maximum container name", strings.Repeat("a", 63), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := originalCPURequestKey(tt.container)
+			// The key must be a valid annotation key, not merely within the length limit.
+			errs := apivalidation.ValidateAnnotations(map[string]string{key: "100m"}, field.NewPath("metadata", "annotations"))
+			require.Emptyf(t, errs, "invalid annotation key %q: %v", key, errs)
+			if tt.wantHashed {
+				// Hashed suffixes live in a reserved "hash." namespace a readable
+				// container name (a DNS label, which cannot contain a dot) can never occupy.
+				assert.Contains(t, key, "-hash.")
+			} else {
+				assert.Equal(t, OriginalCPURequestAnnotation+"-"+tt.container, key)
+			}
+		})
+	}
+
+	// Distinct long names map to distinct keys.
+	assert.NotEqual(t,
+		originalCPURequestKey(strings.Repeat("a", 63)),
+		originalCPURequestKey(strings.Repeat("b", 63)))
+}
+
+func TestMutator_OverrideCPUWithRequestHandlesLongContainerName(t *testing.T) {
+	m := &podMutator{config: ConvertExternalConfig(&ClusterResourceOverride{
+		Spec: ClusterResourceOverrideSpec{CPURequestToRequestPercent: 50},
+	})}
+	name := strings.Repeat("a", 63) // a valid, maximum-length container name
+	pod := &corev1.Pod{}
+	res := &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+	}
+	// The webhook records the original request; the key it writes must be a valid
+	// annotation key.
+	m.AnnotateOriginalRequest(res, name, pod)
+	errs := apivalidation.ValidateAnnotations(pod.Annotations, field.NewPath("metadata", "annotations"))
+	require.Emptyf(t, errs, "webhook wrote invalid annotations: %v", errs)
+	// It must then read that same annotation back and compute the request from it.
+	m.OverrideCPUWithRequest(res, name, pod)
+	validate(t, res.Requests, corev1.ResourceCPU, resource.MustParse("50m"))
 }
