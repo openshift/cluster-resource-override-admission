@@ -95,6 +95,10 @@ func NewInClusterAdmission(kubeClientConfig *restclient.Config, stopCh <-chan st
 
 // NewAdmission constructs an Admission using the supplied configuration loader.
 func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, configLoaderFunc ConfigLoaderFunc) (admission Admission, err error) {
+	if configLoaderFunc == nil {
+		err = fmt.Errorf("name=%s failed to load configuration - loader is nil", Name)
+		return
+	}
 	config, configLoadErr := configLoaderFunc()
 	if configLoadErr != nil {
 		err = fmt.Errorf("name=%s failed to load configuration: %w", Name, configLoadErr)

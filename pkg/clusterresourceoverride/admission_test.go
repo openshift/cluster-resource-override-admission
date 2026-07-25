@@ -29,6 +29,13 @@ func TestNewAdmissionValidatesConfiguration(t *testing.T) {
 		assert.Contains(t, err.Error(), "cpuRequestToLimitRatio")
 	})
 
+	t.Run("rejects a nil loader", func(t *testing.T) {
+		admission, err := NewAdmission(nil, nil, nil)
+		require.Error(t, err)
+		require.Nil(t, admission)
+		assert.Contains(t, err.Error(), "loader is nil")
+	})
+
 	t.Run("rejects a nil config from the loader", func(t *testing.T) {
 		loader := func() (*Config, error) { return nil, nil }
 		admission, err := NewAdmission(nil, nil, loader)
