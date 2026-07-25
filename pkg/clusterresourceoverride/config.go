@@ -106,7 +106,7 @@ func Decode(reader io.Reader) (object *ClusterResourceOverride, err error) {
 func DecodeWithFile(path string) (object *ClusterResourceOverride, err error) {
 	reader, openErr := os.Open(path)
 	if openErr != nil {
-		err = fmt.Errorf("unable to load file %s: %s", path, openErr)
+		err = fmt.Errorf("unable to load file %s: %w", path, openErr)
 		return
 	}
 	defer func() {

@@ -1,11 +1,22 @@
 package clusterresourceoverride
 
 import (
+	"io/fs"
 	"math"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestDecodeWithFileWrapsOpenError(t *testing.T) {
+	// The open error must be wrapped with %w so a caller can match it, for example to tell a
+	// missing file apart from a malformed one.
+	_, err := DecodeWithFile(filepath.Join(t.TempDir(), "does-not-exist.yaml"))
+	require.Error(t, err)
+	require.ErrorIs(t, err, fs.ErrNotExist)
+}
 
 func TestConvertExternalConfig(t *testing.T) {
 	external := &ClusterResourceOverride{

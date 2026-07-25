@@ -1,6 +1,7 @@
 package clusterresourceoverride
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -43,6 +44,27 @@ func TestNewAdmissionValidatesConfiguration(t *testing.T) {
 		require.Nil(t, admission)
 		assert.Contains(t, err.Error(), "nil config")
 	})
+}
+
+func TestNewAdmissionRejectsNilKubeClientConfig(t *testing.T) {
+	// A valid config must fail cleanly, not panic, when the kube client config is nil:
+	// client-go's NewForConfig dereferences it immediately. The guard runs after config
+	// validation, so an invalid config is still reported before this one.
+	loader := func() (*Config, error) { return &Config{}, nil }
+	admission, err := NewAdmission(nil, nil, loader)
+	require.Error(t, err)
+	require.Nil(t, admission)
+	assert.Contains(t, err.Error(), "kube client config is nil")
+}
+
+func TestNewAdmissionWrapsLoaderError(t *testing.T) {
+	// The loader's error is wrapped with %w, so a caller can match the underlying cause.
+	loadErr := errors.New("load failed")
+	loader := func() (*Config, error) { return nil, loadErr }
+	admission, err := NewAdmission(nil, nil, loader)
+	require.Error(t, err)
+	require.Nil(t, admission)
+	require.ErrorIs(t, err, loadErr)
 }
 
 func TestNewInClusterAdmissionRejectsInvalidConfigFile(t *testing.T) {

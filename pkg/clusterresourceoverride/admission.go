@@ -82,7 +82,7 @@ func NewInClusterAdmission(kubeClientConfig *restclient.Config, stopCh <-chan st
 
 		externalConfig, decodeErr := DecodeWithFile(configPath)
 		if decodeErr != nil {
-			err = fmt.Errorf("name=%s file=%s failed to decode configuration - %s", Name, configPath, decodeErr.Error())
+			err = fmt.Errorf("name=%s file=%s failed to decode configuration: %w", Name, configPath, decodeErr)
 			return
 		}
 
@@ -119,9 +119,17 @@ func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, c
 		return
 	}
 
+	// Guard the nil case before client-go dereferences it: NewForConfig copies *kubeClientConfig
+	// immediately, so a nil argument would panic instead of returning an error. This runs after
+	// Validate so an invalid configuration is still reported before the client is considered.
+	if kubeClientConfig == nil {
+		err = fmt.Errorf("name=%s failed to create Kubernetes client: kube client config is nil", Name)
+		return
+	}
+
 	client, clientErr := kubernetes.NewForConfig(kubeClientConfig)
 	if clientErr != nil {
-		err = fmt.Errorf("name=%s failed to load configuration - %s", Name, clientErr.Error())
+		err = fmt.Errorf("name=%s failed to create Kubernetes client: %w", Name, clientErr)
 		return
 	}
 
