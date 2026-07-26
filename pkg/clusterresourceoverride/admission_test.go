@@ -67,6 +67,16 @@ func TestNewAdmissionWrapsLoaderError(t *testing.T) {
 	require.ErrorIs(t, err, loadErr)
 }
 
+func TestGetConfigurationReturnsCopy(t *testing.T) {
+	// GetConfiguration must not expose the admission's validated config for mutation: a caller
+	// changing the returned value must not change the configuration admission runs with.
+	admission := &clusterResourceOverrideAdmission{config: &Config{CpuRequestToLimitRatio: 0.5}}
+	got := admission.GetConfiguration()
+	require.NotNil(t, got)
+	got.CpuRequestToLimitRatio = 1.5
+	assert.Equal(t, 0.5, admission.GetConfiguration().CpuRequestToLimitRatio, "internal config must be unchanged")
+}
+
 func TestNewInClusterAdmissionRejectsInvalidConfigFile(t *testing.T) {
 	// A hand-edited configuration file with an out-of-range percentage must fail startup
 	// before the API client is created, so no cluster is needed here.

@@ -118,6 +118,11 @@ func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, c
 		err = fmt.Errorf("name=%s invalid configuration: %w", Name, validateErr)
 		return
 	}
+	// Store a copy so a caller that retains and later mutates the config it passed cannot change
+	// the validated configuration the admission runs with. Config holds only scalar fields, so a
+	// shallow copy is a full copy.
+	validatedConfig := *config
+	config = &validatedConfig
 
 	// Guard the nil case before client-go dereferences it: NewForConfig copies *kubeClientConfig
 	// immediately, so a nil argument would panic instead of returning an error. This runs after
@@ -195,7 +200,13 @@ type clusterResourceOverrideAdmission struct {
 }
 
 func (p *clusterResourceOverrideAdmission) GetConfiguration() *Config {
-	return p.config
+	if p == nil || p.config == nil {
+		return nil
+	}
+	// Return a copy so a caller cannot mutate the admission's validated configuration through
+	// the returned pointer.
+	configCopy := *p.config
+	return &configCopy
 }
 
 func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1.AdmissionRequest) bool {
