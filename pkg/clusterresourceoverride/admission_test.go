@@ -265,7 +265,6 @@ func TestAdmit_ROMatchOverridesClusterConfig(t *testing.T) {
 		limitQuerier: &namespaceLimitQuerier{
 			limitRangesLister: newFakeLimitRangeLister(),
 		},
-		roLister: roLister,
 		resolver: NewOverrideResolver(roLister, croConfig, nil),
 	}
 
@@ -333,7 +332,6 @@ func TestAdmit_NoROMatch_FallsBackToClusterConfig(t *testing.T) {
 		limitQuerier: &namespaceLimitQuerier{
 			limitRangesLister: newFakeLimitRangeLister(),
 		},
-		roLister: roLister,
 		resolver: NewOverrideResolver(roLister, croConfig, nil),
 	}
 
@@ -438,7 +436,6 @@ func TestAdmit_MultipleROMatches_LexicographicWinner(t *testing.T) {
 		limitQuerier: &namespaceLimitQuerier{
 			limitRangesLister: newFakeLimitRangeLister(),
 		},
-		roLister: roLister,
 		resolver: NewOverrideResolver(roLister, croConfig, nil),
 	}
 
@@ -492,7 +489,6 @@ func TestAdmit_EmptySelector_MatchesAllPods(t *testing.T) {
 		limitQuerier: &namespaceLimitQuerier{
 			limitRangesLister: newFakeLimitRangeLister(),
 		},
-		roLister: roLister,
 		resolver: NewOverrideResolver(roLister, croConfig, nil),
 	}
 
@@ -577,7 +573,6 @@ func TestAdmit_ROWithLimitRangeFloor(t *testing.T) {
 				corev1.ResourceCPU,
 			),
 		},
-		roLister: roLister,
 		resolver: NewOverrideResolver(roLister, croConfig, nil),
 	}
 
@@ -637,7 +632,6 @@ func TestAdmit_ROWithLimitRangeCeiling(t *testing.T) {
 				corev1.ResourceCPU,
 			),
 		},
-		roLister: roLister,
 		resolver: NewOverrideResolver(roLister, croConfig, nil),
 	}
 
@@ -692,7 +686,6 @@ func TestAdmit_ROWithCPURequestToRequestPercent(t *testing.T) {
 		limitQuerier: &namespaceLimitQuerier{
 			limitRangesLister: newFakeLimitRangeLister(),
 		},
-		roLister: roLister,
 		resolver: NewOverrideResolver(roLister, croConfig, nil),
 	}
 
@@ -955,7 +948,6 @@ func TestAdmit_ROWithLimitCPUToMemory(t *testing.T) {
 		limitQuerier: &namespaceLimitQuerier{
 			limitRangesLister: newFakeLimitRangeLister(),
 		},
-		roLister: roLister,
 		resolver: NewOverrideResolver(roLister, croConfig, nil),
 	}
 

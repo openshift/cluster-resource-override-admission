@@ -407,7 +407,7 @@ func TestFilterMatchingROs_ExemptNamespaceFiltered(t *testing.T) {
 		{Namespace: "my-app", Name: "valid-ro", Selector: nil},
 		{Namespace: "kube-system", Name: "another-exempt", Selector: nil},
 	}
-	matched := filterMatchingROs(candidates, map[string]string{})
+	matched := filterMatchingROs(candidates, "my-app", map[string]string{})
 	require.Len(t, matched, 1)
 	assert.Equal(t, "valid-ro", matched[0].Name)
 }
@@ -558,28 +558,25 @@ func TestResolveConfig_CrossNamespaceROIgnored(t *testing.T) {
 	pod := makePod("test-pod", nil)
 	got := resolver.ResolveConfig("test-ns", pod)
 
-	// The RO has Namespace="other-ns" even though it came from the "test-ns" query.
-	// Since "other-ns" is not exempt, it would still be used. This documents
-	// that the resolver trusts the store to return correct namespace results.
-	assert.InDelta(t, 0.99, got.CpuRequestToLimitRatio, 0.001)
+	assert.Equal(t, clusterConfig, got, "RO from a different namespace should be ignored, falling back to cluster config")
 }
 
 func TestFilterMatchingROs_EmptyInput(t *testing.T) {
-	matched := filterMatchingROs(nil, map[string]string{"app": "web"})
+	matched := filterMatchingROs(nil, "test-ns", map[string]string{"app": "web"})
 	assert.Empty(t, matched)
 }
 
 func TestFilterMatchingROs_EmptySliceInput(t *testing.T) {
-	matched := filterMatchingROs([]ResourceOverrideView{}, map[string]string{"app": "web"})
+	matched := filterMatchingROs([]ResourceOverrideView{}, "test-ns", map[string]string{"app": "web"})
 	assert.Empty(t, matched)
 }
 
 func TestFilterMatchingROs_AllExempt(t *testing.T) {
 	candidates := []ResourceOverrideView{
-		{Namespace: "openshift-monitoring", Name: "ro1", Selector: nil},
+		{Namespace: "kube-system", Name: "ro1", Selector: nil},
 		{Namespace: "kube-system", Name: "ro2", Selector: nil},
 	}
-	matched := filterMatchingROs(candidates, map[string]string{})
+	matched := filterMatchingROs(candidates, "kube-system", map[string]string{})
 	assert.Empty(t, matched)
 }
 
@@ -590,7 +587,7 @@ func TestFilterMatchingROs_NilPodLabels(t *testing.T) {
 			MatchLabels: map[string]string{"app": "web"},
 		}},
 	}
-	matched := filterMatchingROs(candidates, nil)
+	matched := filterMatchingROs(candidates, "test-ns", nil)
 	require.Len(t, matched, 1)
 	assert.Equal(t, "wildcard", matched[0].Name)
 }

@@ -62,7 +62,7 @@ func (r *OverrideResolver) ResolveConfig(namespace string, pod *corev1.Pod) *Con
 		podLabels = map[string]string{}
 	}
 
-	matched := filterMatchingROs(candidates, podLabels)
+	matched := filterMatchingROs(candidates, namespace, podLabels)
 	if len(matched) == 0 {
 		klog.V(5).Infof("namespace=%s no ResourceOverrides match pod labels, using ClusterResourceOverride config", namespace)
 		return r.clusterConfig
@@ -75,9 +75,13 @@ func (r *OverrideResolver) ResolveConfig(namespace string, pod *corev1.Pod) *Con
 	return config
 }
 
-func filterMatchingROs(candidates []ResourceOverrideView, podLabels map[string]string) []ResourceOverrideView {
+func filterMatchingROs(candidates []ResourceOverrideView, podNamespace string, podLabels map[string]string) []ResourceOverrideView {
 	var matched []ResourceOverrideView
 	for _, ro := range candidates {
+		if ro.Namespace != podNamespace {
+			klog.Warningf("namespace=%s ResourceOverride %q skipped: belongs to namespace %q", podNamespace, ro.Name, ro.Namespace)
+			continue
+		}
 		if IsNamespaceExempt(ro.Namespace) {
 			klog.V(5).Infof("namespace=%s ResourceOverride %q skipped: exempt namespace", ro.Namespace, ro.Name)
 			continue

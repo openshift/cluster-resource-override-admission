@@ -148,7 +148,6 @@ func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, c
 		limitQuerier: &namespaceLimitQuerier{
 			limitRangesLister: limitRanges.Lister(),
 		},
-		roLister: roLister,
 		resolver: NewOverrideResolver(roLister, config, eventRecorder),
 	}
 
@@ -183,7 +182,6 @@ type clusterResourceOverrideAdmission struct {
 	config       *Config
 	nsLister     corev1listers.NamespaceLister
 	limitQuerier *namespaceLimitQuerier
-	roLister     ResourceOverrideLister
 	resolver     *OverrideResolver
 }
 
