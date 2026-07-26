@@ -1,6 +1,9 @@
 package clusterresourceoverride
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,6 +14,83 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 )
+
+func TestNewAdmissionValidatesConfiguration(t *testing.T) {
+	// NewAdmission is the single boundary every ConfigLoaderFunc passes through, so an
+	// invalid config must be rejected there, before any API client is built, regardless of
+	// which loader produced it.
+	t.Run("rejects an out-of-range ratio", func(t *testing.T) {
+		loader := func() (*Config, error) {
+			return &Config{CpuRequestToLimitRatio: 1.5}, nil
+		}
+		admission, err := NewAdmission(nil, nil, loader)
+		require.Error(t, err)
+		require.Nil(t, admission)
+		assert.Contains(t, err.Error(), "invalid configuration")
+		assert.Contains(t, err.Error(), "cpuRequestToLimitRatio")
+	})
+
+	t.Run("rejects a nil loader", func(t *testing.T) {
+		admission, err := NewAdmission(nil, nil, nil)
+		require.Error(t, err)
+		require.Nil(t, admission)
+		assert.Contains(t, err.Error(), "loader is nil")
+	})
+
+	t.Run("rejects a nil config from the loader", func(t *testing.T) {
+		loader := func() (*Config, error) { return nil, nil }
+		admission, err := NewAdmission(nil, nil, loader)
+		require.Error(t, err)
+		require.Nil(t, admission)
+		assert.Contains(t, err.Error(), "nil config")
+	})
+}
+
+func TestNewAdmissionRejectsNilKubeClientConfig(t *testing.T) {
+	// A valid config must fail cleanly, not panic, when the kube client config is nil:
+	// client-go's NewForConfig dereferences it immediately. The guard runs after config
+	// validation, so an invalid config is still reported before this one.
+	loader := func() (*Config, error) { return &Config{}, nil }
+	admission, err := NewAdmission(nil, nil, loader)
+	require.Error(t, err)
+	require.Nil(t, admission)
+	assert.Contains(t, err.Error(), "kube client config is nil")
+}
+
+func TestNewAdmissionWrapsLoaderError(t *testing.T) {
+	// The loader's error is wrapped with %w, so a caller can match the underlying cause.
+	loadErr := errors.New("load failed")
+	loader := func() (*Config, error) { return nil, loadErr }
+	admission, err := NewAdmission(nil, nil, loader)
+	require.Error(t, err)
+	require.Nil(t, admission)
+	require.ErrorIs(t, err, loadErr)
+}
+
+func TestGetConfigurationReturnsCopy(t *testing.T) {
+	// GetConfiguration must not expose the admission's validated config for mutation: a caller
+	// changing the returned value must not change the configuration admission runs with.
+	admission := &clusterResourceOverrideAdmission{config: &Config{CpuRequestToLimitRatio: 0.5}}
+	got := admission.GetConfiguration()
+	require.NotNil(t, got)
+	got.CpuRequestToLimitRatio = 1.5
+	assert.Equal(t, 0.5, admission.GetConfiguration().CpuRequestToLimitRatio, "internal config must be unchanged")
+}
+
+func TestNewInClusterAdmissionRejectsInvalidConfigFile(t *testing.T) {
+	// A hand-edited configuration file with an out-of-range percentage must fail startup
+	// before the API client is created, so no cluster is needed here.
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := "apiVersion: v1\nkind: ClusterResourceOverrideConfig\nspec:\n  cpuRequestToLimitPercent: 101\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	t.Setenv(configurationEnvName, path)
+
+	admission, err := NewInClusterAdmission(nil, nil)
+	require.Error(t, err)
+	require.Nil(t, admission)
+	assert.Contains(t, err.Error(), "invalid configuration")
+	assert.Contains(t, err.Error(), "cpuRequestToLimitRatio")
+}
 
 func TestSetNamespaceFloor(t *testing.T) {
 	cpu := resource.MustParse("1000m")

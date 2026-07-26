@@ -82,7 +82,7 @@ func NewInClusterAdmission(kubeClientConfig *restclient.Config, stopCh <-chan st
 
 		externalConfig, decodeErr := DecodeWithFile(configPath)
 		if decodeErr != nil {
-			err = fmt.Errorf("name=%s file=%s failed to decode configuration - %s", Name, configPath, decodeErr.Error())
+			err = fmt.Errorf("name=%s file=%s failed to decode configuration: %w", Name, configPath, decodeErr)
 			return
 		}
 
@@ -93,18 +93,48 @@ func NewInClusterAdmission(kubeClientConfig *restclient.Config, stopCh <-chan st
 	return NewAdmission(kubeClientConfig, stopCh, configLoader)
 }
 
-// NewInClusterAdmission returns a new instance of Admission that is appropriate
-// to be consumed in cluster.
+// NewAdmission constructs an Admission using the supplied configuration loader.
 func NewAdmission(kubeClientConfig *restclient.Config, stopCh <-chan struct{}, configLoaderFunc ConfigLoaderFunc) (admission Admission, err error) {
+	if configLoaderFunc == nil {
+		err = fmt.Errorf("name=%s failed to load configuration - loader is nil", Name)
+		return
+	}
 	config, configLoadErr := configLoaderFunc()
 	if configLoadErr != nil {
-		err = fmt.Errorf("name=%s failed to load configuration - %s", Name, configLoadErr.Error())
+		err = fmt.Errorf("name=%s failed to load configuration: %w", Name, configLoadErr)
+		return
+	}
+	// Validate here rather than in a particular loader: NewAdmission is the common boundary
+	// every ConfigLoaderFunc passes through. A file-backed loader can produce an out-of-range
+	// ratio (for example a 101% percentage), and a programmatic loader can additionally
+	// produce a non-finite one; validating here means neither can bypass the check. This runs
+	// before the client is built, so an invalid configuration fails fast without contacting
+	// the API server.
+	if config == nil {
+		err = fmt.Errorf("name=%s failed to load configuration - loader returned nil config", Name)
+		return
+	}
+	if validateErr := config.Validate(); validateErr != nil {
+		err = fmt.Errorf("name=%s invalid configuration: %w", Name, validateErr)
+		return
+	}
+	// Store a copy so a caller that retains and later mutates the config it passed cannot change
+	// the validated configuration the admission runs with. Config holds only scalar fields, so a
+	// shallow copy is a full copy.
+	validatedConfig := *config
+	config = &validatedConfig
+
+	// Guard the nil case before client-go dereferences it: NewForConfig copies *kubeClientConfig
+	// immediately, so a nil argument would panic instead of returning an error. This runs after
+	// Validate so an invalid configuration is still reported before the client is considered.
+	if kubeClientConfig == nil {
+		err = fmt.Errorf("name=%s failed to create Kubernetes client: kube client config is nil", Name)
 		return
 	}
 
 	client, clientErr := kubernetes.NewForConfig(kubeClientConfig)
 	if clientErr != nil {
-		err = fmt.Errorf("name=%s failed to load configuration - %s", Name, clientErr.Error())
+		err = fmt.Errorf("name=%s failed to create Kubernetes client: %w", Name, clientErr)
 		return
 	}
 
@@ -170,7 +200,13 @@ type clusterResourceOverrideAdmission struct {
 }
 
 func (p *clusterResourceOverrideAdmission) GetConfiguration() *Config {
-	return p.config
+	if p == nil || p.config == nil {
+		return nil
+	}
+	// Return a copy so a caller cannot mutate the admission's validated configuration through
+	// the returned pointer.
+	configCopy := *p.config
+	return &configCopy
 }
 
 func (p *clusterResourceOverrideAdmission) IsApplicable(request *admissionv1.AdmissionRequest) bool {
