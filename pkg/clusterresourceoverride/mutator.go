@@ -16,6 +16,11 @@ type CPUMemory struct {
 	Memory *resource.Quantity
 }
 
+// NewMutator returns a podMutator for the given configuration, namespace floor, and ceiling.
+// It rejects nil inputs and a non-finite scale factor or ratio; range validation of the ratios
+// is the configuration loader's responsibility. The mutator retains the config, minimum, and
+// maximum it is given rather than copying them, so a caller must not mutate those values after
+// construction. The admission handler satisfies this by building a fresh set for each request.
 func NewMutator(config *Config, minimum *CPUMemory, maximum *CPUMemory, cpuBaseScaleFactor float64) (mutator *podMutator, err error) {
 	if config == nil || minimum == nil || maximum == nil {
 		err = errors.New("NewMutator: invalid input")
