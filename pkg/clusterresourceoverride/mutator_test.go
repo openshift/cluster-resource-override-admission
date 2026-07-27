@@ -1321,3 +1321,46 @@ func TestNewMutator_RejectsNonFiniteRatio(t *testing.T) {
 	_, err := NewMutator(&Config{LimitCPUToMemoryRatio: 2.0}, &CPUMemory{}, &CPUMemory{}, factor)
 	assert.NoError(t, err)
 }
+
+func TestOverridePreservesExactPercentThroughConversion(t *testing.T) {
+	// End to end: a whole-number percent from the operator CRD keeps its exact integer
+	// arithmetic through ConvertExternalConfig -> NewMutator -> Mutate, rather than losing the
+	// last millicore to a truncating float cast. Config.Validate is added in #118 and joins
+	// this chain once that merges; the conversion and mutation steps are what this PR changes.
+	podWithLimits := func(limits corev1.ResourceList) *corev1.Pod {
+		return &corev1.Pod{
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{
+					Name:      "app",
+					Resources: corev1.ResourceRequirements{Limits: limits},
+				}},
+			},
+		}
+	}
+
+	t.Run("CPU-to-memory scales a memory limit to an exact CPU limit", func(t *testing.T) {
+		cro := &ClusterResourceOverride{Spec: ClusterResourceOverrideSpec{LimitCPUToMemoryPercent: 29}}
+		mutator, err := NewMutator(ConvertExternalConfig(cro), &CPUMemory{}, &CPUMemory{}, factor)
+		require.NoError(t, err)
+
+		out, err := mutator.Mutate(podWithLimits(corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1536Mi")}))
+		require.NoError(t, err)
+
+		// 1536Mi is 1.5GiB, so 1.5 * 1000 mCPU * 29% is exactly 435m; a float cast yields 434m.
+		got := out.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU]
+		assert.Equal(t, "435m", got.String())
+	})
+
+	t.Run("CPU-request-to-limit sets an exact CPU request", func(t *testing.T) {
+		cro := &ClusterResourceOverride{Spec: ClusterResourceOverrideSpec{CPURequestToLimitPercent: 29}}
+		mutator, err := NewMutator(ConvertExternalConfig(cro), &CPUMemory{}, &CPUMemory{}, factor)
+		require.NoError(t, err)
+
+		out, err := mutator.Mutate(podWithLimits(corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")}))
+		require.NoError(t, err)
+
+		// 100m * 29% is exactly 29m; float64(100)*0.29 is 28.999... and truncates to 28m.
+		got := out.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU]
+		assert.Equal(t, "29m", got.String())
+	})
+}
