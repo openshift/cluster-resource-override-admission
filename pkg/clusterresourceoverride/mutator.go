@@ -277,7 +277,8 @@ func (m *podMutator) OverrideCPULimit(resources *corev1.ResourceRequirements) {
 		return
 	}
 
-	// A whole-number percent (every value ConvertExternalConfig produces) is applied exactly:
+	// A whole-number percent (every practical CPU-to-memory percentage ConvertExternalConfig
+	// produces) is applied exactly:
 	// scale the memory bytes to millicores by cpuBaseScaleFactor's exact rational form and do
 	// the multiply/divide in big.Int, so the result is the exact floor (the historical
 	// truncating behavior) rather than a float64 approximation (a 1536Mi limit at 29% is 435m,
