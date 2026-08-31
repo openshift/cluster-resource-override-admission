@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Docs: https://docs.coderabbit.ai/getting-started/configure-coderabbit
+
+language: en-US
+early_access: false
+
+reviews:
+  profile: "chill"
+  high_level_summary: false
+  poem: false
+  request_changes_workflow: false
+  collapse_walkthrough: true
+
+  path_filters:
+    - "!vendor/**"
+    - "!**/vendor/**"
+    - "!**/zz_generated*"
+    - "!go.sum"
+
+  path_instructions:
+    - path: "pkg/clusterresourceoverride/admission.go"
+      instructions: |
+        Review for admission webhook best practices: proper AdmissionResponse
+        construction, informer cache synchronization, and error handling.
+        Verify IsApplicable only matches pod CREATE requests, IsExempt
+        correctly checks namespace labels and exemptions, and Admit
+        properly handles config resolution and mutation.
+
+    - path: "pkg/clusterresourceoverride/mutator.go"
+      instructions: |
+        CRITICAL: The mutation order in Override() method is load-bearing.
+        The sequence AnnotateOriginalRequest → OverrideMemory →
+        OverrideCPULimit → OverrideCPUWithLimit → OverrideCPUWithRequest
+        must be preserved. Review for idempotency (annotation handling),
+        LimitRange floor/ceiling clamping, and correct resource calculation.
+
+    - path: "pkg/clusterresourceoverride/resolver.go"
+      instructions: |
+        Review ResourceOverride matching logic for correct label selector
+        evaluation, namespace filtering, and lexicographic conflict
+        resolution. Verify event recording for conflicts and proper
+        fallback to cluster-wide config when no CR matches.
+
+    - path: "pkg/clusterresourceoverride/exempt.go"
+      instructions: |
+        This file controls namespace exemptions (openshift-*, kubernetes-*,
+        kube-* as well as openshift, kubernetes and kube). Changes here
+        affect which namespaces can be overridden. Additions to the
+        exemption list require strong justification.
+
+    - path: "pkg/clusterresourceoverride/config.go"
+      instructions: |
+        Review configuration schema changes for backward compatibility.
+        Config changes often require coordinated updates in the operator
+        repo. Verify correct percentage-to-ratio conversion (divide by 100).
+
+    - path: "pkg/clusterresourceoverride/limitquerier.go"
+      instructions: |
+        Review LimitRange integration for correct minimum/maximum lookups
+        across all LimitRange objects in the namespace. Verify informer-
+        backed lookups (no API calls during admission).
+
+    - path: "**/*_test.go"
+      instructions: |
+        Verify tests are table-driven where appropriate, cover edge cases
+        (zero values, nil pointers, empty configs), and include both
+        positive and negative cases. For mutator tests, verify multiple
+        override ratios and LimitRange interactions.
+
+    - path: "pkg/clusterresourceoverride/patcher.go"
+      instructions: |
+        Review JSON patch generation for correctness. Verify patches are
+        minimal (only changed fields) and compatible with strategic merge
+        patch semantics for pod specs.
+
+    - path: "artifacts/manifests/**/*.yaml"
+      instructions: |
+        Review Kubernetes manifests for correct RBAC (admission webhooks
+        need namespace and limitrange list/watch), security context,
+        resource limits, and anti-affinity for high availability.
+
+    - path: "**/{Dockerfile,Dockerfile.*}"
+      instructions: |
+        Check for multi-stage builds, no secrets or credentials,
+        minimal image size, and correct artifact paths. Verify
+        artifacts/configuration.yaml is copied to the correct
+        location in the image.
+
+    - path: "cmd/**/*.go"
+      instructions: |
+        The main.go is minimal (delegates to generic-admission-server).
+        Review clusterresourceoverride.go for correct Admission interface
+        implementation and ValidatingAdmissionHook/MutatingAdmissionHook
+        registration.
+
+  tools:
+    gitleaks:
+      enabled: true
+    golangci-lint:
+      enabled: true
+    hadolint:
+      enabled: true
+
+  knowledge_base:
+    code_guidelines:
+      enabled: true
+      filePatterns:
+        - "**/AGENTS.md"
+        - "**/CONTRIBUTING.md"
+    learnings:
+      scope: auto
+    issues:
+      scope: auto
+    pull_requests:
+      scope: auto
