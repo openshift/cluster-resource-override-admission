@@ -43,9 +43,10 @@ reviews:
 
     - path: "pkg/clusterresourceoverride/exempt.go"
       instructions: |
-        This file controls namespace exemptions (openshift*, kubernetes*,
-        kube*). Changes here affect which namespaces can be overridden.
-        Additions to the exemption list require strong justification.
+        This file controls namespace exemptions (openshift-*, kubernetes-*,
+        kube-* as well as openshift, kubernetes and kube). Changes here
+        affect which namespaces can be overridden. Additions to the
+        exemption list require strong justification.
 
     - path: "pkg/clusterresourceoverride/config.go"
       instructions: |

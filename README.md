@@ -1,6 +1,6 @@
 # Cluster Resource Override Admission
 
-**ClusterResourceOverride Admission** is the operand workload deployed and managed by the [cluster-resource-override-admission-operator](https://github.com/openshift/cluster-resource-override-admission-operator). When pods are created in an OpenShift cluster, this component automatically adjusts their container resource requests and limits based on configured ratios. This helps ensure fair resource distribution across namespaces and prevents any single namespace from consuming all available cluster resources.
+**ClusterResourceOverride Admission** is the operand workload deployed and managed by the [cluster-resource-override-admission-operator](https://github.com/openshift/cluster-resource-override-admission-operator). When pods are created in an OpenShift cluster, this component automatically adjusts their container resource requests and limits based on configured ratios. This provides cluster admins with controls to oversubscribe nodes and maximize resource utilization. By setting ratios appropriately, admins can run more pods on nodes than what the pod resource requests suggest. If ratios are set too low, workload quality of service may suffer.
 
 Instead of manually setting resource limits for every pod, cluster administrators configure override ratios once, and this component applies them automatically.
 
@@ -8,11 +8,12 @@ Instead of manually setting resource limits for every pod, cluster administrator
 
 The ClusterResourceOverride Admission component modifies the ratio between requests and limits that are set on containers. When used together with namespace LimitRanges that specify limits and defaults, you can achieve the desired level of resource overcommit for your cluster.
 
-The component supports three override ratios:
+The component supports four override ratios:
 
 - **memoryRequestToLimitPercent**: Sets memory request as a percentage of memory limit (e.g., 50% means a 2Gi limit gets a 1Gi request)
 - **cpuRequestToLimitPercent**: Sets CPU request as a percentage of CPU limit (e.g., 25% means a 1000m limit gets a 250m request)
 - **limitCPUToMemoryPercent**: Derives CPU limit from memory limit (e.g., 200% means 1Gi memory gets 2 CPU cores)
+- **cpuRequestToRequestPercent**: Scales down CPU request from existing request value (e.g., 75% means a 1000m request becomes 750m)
 
 ## How It Works
 
@@ -33,6 +34,7 @@ The component supports two levels of configuration, allowing flexibility from cl
 
 - **Scope**: Applies to all opted-in namespaces across the cluster
 - **Location**: Configuration file at `/etc/clusterresourceoverride/config/override.yaml`
+- **Managed by**: When deployed on OpenShift, this file is automatically created and updated by the Cluster Resource Override Operator from the ClusterResourceOverride object.
 - **Use case**: Set sensible defaults for the entire cluster
 
 #### Tier 2: ResourceOverride CRs (Namespace-Specific) (Optional)

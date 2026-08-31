@@ -4,7 +4,7 @@ This file provides AI-specific guidance for working in the cluster-resource-over
 
 ## Project Overview
 
-This repo contains the **Cluster Resource Override** admission webhook operand for OpenShift — a component that automatically adjusts container resource requests and limits to enforce fair resource distribution and prevent resource exhaustion.
+This repo contains the **Cluster Resource Override** admission webhook operand for OpenShift — a component that automatically adjusts container resource requests and limits to control the level of overcommit and maximize resource utilization.
 
 The admission webhook is deployed and managed by the [cluster-resource-override-admission-operator](https://github.com/openshift/cluster-resource-override-admission-operator).
 
@@ -14,6 +14,7 @@ The webhook intercepts pod creation requests and modifies container resource spe
 - **memoryRequestToLimitPercent**: Sets memory request as a percentage of memory limit (e.g., 50% means a 2Gi limit gets a 1Gi request)
 - **cpuRequestToLimitPercent**: Sets CPU request as a percentage of CPU limit (e.g., 25% means a 1000m limit gets a 250m request)
 - **limitCPUToMemoryPercent**: Derives CPU limit from memory limit (e.g., 200% means 1Gi memory gets 2 CPU cores)
+- **cpuRequestToRequestPercent**: Scales down CPU request from existing request value (e.g., 75% means a 1000m request becomes 750m)
 
 ### Opt-In Model
 
@@ -36,7 +37,7 @@ When multiple ResourceOverrides match a pod, conflicts are resolved lexicographi
 ```
 cmd/
   cluster-resource-override-admission/
-    main.go                  # Entry point (9 lines - delegates to generic-admission-server)
+    main.go                  # Entry point
     clusterresourceoverride.go  # Admission hook implementation
 pkg/
   clusterresourceoverride/
@@ -185,11 +186,14 @@ The file `artifacts/configuration.yaml` is baked into the container image at `/e
 memoryRequestToLimitPercent: 50    # Memory request = 50% of memory limit
 cpuRequestToLimitPercent: 25       # CPU request = 25% of CPU limit
 limitCPUToMemoryPercent: 200       # 1 GiB memory → 2 CPU cores
+cpuRequestToRequestPercent: 100    # CPU request unchanged (100% of original)
 ```
 
 ### Configuration Loading
 
 The webhook loads config at startup from the path specified in `CONFIGURATION_PATH` env var. No hot-reloading — config changes require pod restart.
+
+On OpenShift, the operator sets `CONFIGURATION_PATH` to `/etc/clusterresourceoverride/config/override.yaml` and mounts its version of the config file at that location, derived from the ClusterResourceOverride object.
 
 ## Build and Deploy
 
