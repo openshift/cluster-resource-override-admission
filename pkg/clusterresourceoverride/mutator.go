@@ -3,6 +3,8 @@ package clusterresourceoverride
 import (
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -151,15 +153,25 @@ func (m *podMutator) OverrideMemory(resources *corev1.ResourceRequirements) {
 	}
 
 	// memory is measured in whole bytes.
-	// the plugin rounds down to the nearest MiB rather than bytes to improve ease of use for end-users.
-	amount := limit.Value() * int64(m.config.MemoryRequestToLimitRatio*100) / 100
+	// the plugin rounds down to a whole MiB for BinarySI limits, or a whole MB for
+	// DecimalSI limits, rather than to the byte, to improve ease of use for end-users.
+	// limit.Value()*ratioPct overflows int64 for large limits (a 1Ei limit at 50%
+	// wraps to a smaller value; a 512Pi limit wraps negative) even when the final
+	// result fits, so do the multiply in big.Int. MemoryRequestToLimitRatio is a
+	// [0,1] fraction (the operator and CRD constrain the source percent to [1,100]);
+	// math.Round recovers the original integer percentage exactly, since e.g.
+	// 0.29*100 is 28.999999999999996 and a plain int64 cast truncates it to 28. With
+	// the ratio in [0,1] the result never exceeds the limit and fits int64.
+	ratioPct := int64(math.Round(m.config.MemoryRequestToLimitRatio * 100))
+	amountBig := new(big.Int).Mul(big.NewInt(limit.Value()), big.NewInt(ratioPct))
+	amount := amountBig.Quo(amountBig, big.NewInt(100)).Int64()
 	mod := modFunc(limit)
 
 	if rem := amount % mod; rem != 0 {
 		amount = amount - rem
 	}
 
-	overridden := resource.NewQuantity(int64(amount), limit.Format)
+	overridden := resource.NewQuantity(amount, limit.Format)
 	if m.IsMemoryFloorSpecified() && overridden.Cmp(*m.floor.Memory) < 0 {
 		klog.V(5).Infof("%s pod limit %q below namespace limit; setting limit to %q", corev1.ResourceMemory, overridden.String(), m.floor.Memory.String())
 		copy := m.floor.Memory.DeepCopy()
