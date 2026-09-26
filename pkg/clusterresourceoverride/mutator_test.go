@@ -2,6 +2,7 @@ package clusterresourceoverride
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,10 +17,10 @@ const (
 )
 
 func TestMutator_Mutate(t *testing.T) {
-	
+
 	cpu := resource.MustParse("1m")
 	memory := resource.MustParse("1Mi")
-	
+
 	// Tests the mutator using CPURequestToLimitRatio as the CPU request override
 	t.Run("WithCpuRequestToLimitRatio", func(t *testing.T) {
 		floor := &CPUMemory{
@@ -92,11 +93,11 @@ func TestMutator_Mutate(t *testing.T) {
 		validate(t, podGot.Spec.Containers[1].Resources.Limits, corev1.ResourceCPU, resource.MustParse("4000m"))
 		validate(t, podGot.Spec.Containers[1].Resources.Requests, corev1.ResourceCPU, resource.MustParse("1000m"))
 	})
-	
+
 	// Tests mutator using CPURequestToRequestRatio as the CPU resource override
 	// Ensures CPURequestToRequestRatio overwrites CPURequestToLimitRatio
 	// Ensures CPURequestToRequestRatio doesn't compute with request from CPURequestToLimitRatio
-	// Tests the per container annotations to ensure the mutator applies the override 
+	// Tests the per container annotations to ensure the mutator applies the override
 	//   according to each container's original request
 	t.Run("WithCpuRequestToRequestRatio", func(t *testing.T) {
 		floor := &CPUMemory{
@@ -319,7 +320,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 	testAnnotation := fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, testContainerName)
 	tests := []struct {
 		name    string
-		pod *corev1.Pod
+		pod     *corev1.Pod
 		mutator func() *podMutator
 		input   *corev1.ResourceRequirements
 		assert  func(t *testing.T, resources *corev1.ResourceRequirements)
@@ -330,7 +331,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -354,7 +355,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 				},
 			},
 			mutator: func() *podMutator {
@@ -376,7 +377,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -402,7 +403,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -430,7 +431,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "1000m",
 					},
@@ -460,7 +461,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -490,7 +491,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "1000m",
 					},
@@ -1084,4 +1085,282 @@ func validate(t *testing.T, list corev1.ResourceList, name corev1.ResourceName, 
 
 	result := got.Equal(want)
 	require.True(t, result, "mutated, expected: %v, got %v", want, got)
+}
+
+// TestMutator_CPUOverridesDoNotUndercountFractionalPercent covers the float64
+// truncation across the three CPU override paths. 29% is the canonical case:
+// float64(x)*0.29 is 28.999999999999996, so a plain int64 cast dropped the result
+// by 1m. Each path is exercised through the real config conversion.
+func TestMutator_CPUOverridesDoNotUndercountFractionalPercent(t *testing.T) {
+	t.Run("OverrideCPUWithLimit", func(t *testing.T) {
+		m := &podMutator{config: ConvertExternalConfig(&ClusterResourceOverride{
+			Spec: ClusterResourceOverrideSpec{CPURequestToLimitPercent: 29},
+		})}
+		res := &corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+		}
+		m.OverrideCPUWithLimit(res)
+		validate(t, res.Requests, corev1.ResourceCPU, resource.MustParse("29m"))
+	})
+
+	t.Run("OverrideCPUWithRequest", func(t *testing.T) {
+		m := &podMutator{config: ConvertExternalConfig(&ClusterResourceOverride{
+			Spec: ClusterResourceOverrideSpec{CPURequestToRequestPercent: 29},
+		})}
+		name := "c"
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, name): "100m",
+		}}}
+		res := &corev1.ResourceRequirements{}
+		m.OverrideCPUWithRequest(res, name, pod)
+		validate(t, res.Requests, corev1.ResourceCPU, resource.MustParse("29m"))
+	})
+
+	t.Run("OverrideCPULimit", func(t *testing.T) {
+		m := &podMutator{
+			config: ConvertExternalConfig(&ClusterResourceOverride{
+				Spec: ClusterResourceOverrideSpec{LimitCPUToMemoryPercent: 29},
+			}),
+			cpuBaseScaleFactor: factor,
+		}
+		res := &corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1536Mi")},
+		}
+		m.OverrideCPULimit(res)
+		validate(t, res.Limits, corev1.ResourceCPU, resource.MustParse("435m"))
+	})
+}
+
+// TestMutator_CPUOverridesPreserveProgrammaticFractionalRatio covers a Config built directly
+// with a ratio that is not a whole-number percent. This is only reachable programmatically
+// (ConvertExternalConfig always yields a multiple of 0.01 from its int64 percentage), and
+// #118's Config.Validate accepts the full [0,1] range, so the mutator scales such a ratio
+// linearly instead of rounding it to the nearest percent: 0.5% of 1000m is 5m, not 10m.
+func TestMutator_CPUOverridesPreserveProgrammaticFractionalRatio(t *testing.T) {
+	t.Run("OverrideCPUWithLimit is linear, not rounded", func(t *testing.T) {
+		m := &podMutator{config: &Config{CpuRequestToLimitRatio: 0.005}}
+		res := &corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1000m")},
+		}
+		m.OverrideCPUWithLimit(res)
+		validate(t, res.Requests, corev1.ResourceCPU, resource.MustParse("5m"))
+	})
+
+	t.Run("OverrideCPUWithLimit floors a fractional product", func(t *testing.T) {
+		// 33.33% of 1000m is 333.3m, floored to 333m (a round-to-33% would give 330m).
+		m := &podMutator{config: &Config{CpuRequestToLimitRatio: 0.3333}}
+		res := &corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1000m")},
+		}
+		m.OverrideCPUWithLimit(res)
+		validate(t, res.Requests, corev1.ResourceCPU, resource.MustParse("333m"))
+	})
+
+	t.Run("OverrideCPUWithRequest is linear, not rounded", func(t *testing.T) {
+		m := &podMutator{config: &Config{CpuRequestToRequestRatio: 0.005}}
+		name := "c"
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, name): "1000m",
+		}}}
+		res := &corev1.ResourceRequirements{}
+		m.OverrideCPUWithRequest(res, name, pod)
+		validate(t, res.Requests, corev1.ResourceCPU, resource.MustParse("5m"))
+	})
+
+	t.Run("OverrideCPULimit is linear, not rounded", func(t *testing.T) {
+		// 1Gi is exactly 2^30 bytes and the default factor is 1000/2^30, so the size cancels
+		// and 0.5% yields 5m (a round-to-1% would give 10m).
+		m := &podMutator{config: &Config{LimitCPUToMemoryRatio: 0.005}, cpuBaseScaleFactor: factor}
+		res := &corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		}
+		m.OverrideCPULimit(res)
+		validate(t, res.Limits, corev1.ResourceCPU, resource.MustParse("5m"))
+	})
+}
+
+func TestMutator_OverrideCPULimitFloorsExactly(t *testing.T) {
+	// OverrideCPULimit does an exact integer division and floors it. These lock both
+	// halves: the truncation fix (1536Mi at 29% is exactly 435m, previously lost to
+	// float64 error as 434m) and the floor policy (768Mi at 29% is exactly 217.5m,
+	// which floors to 217m rather than rounding up to 218m; 1538Mi at 29% floors to
+	// 435m, not 436m).
+	cases := []struct {
+		name   string
+		memory string
+		pct    int64
+		want   string
+	}{
+		{"exact integer result is not lost to float64 error", "1536Mi", 29, "435m"},
+		{"fractional result floors down", "1538Mi", 29, "435m"},
+		{"exact half floors down", "768Mi", 29, "217m"},
+		{"high percent floors down", "88Mi", 96, "82m"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := &podMutator{
+				config: ConvertExternalConfig(&ClusterResourceOverride{
+					Spec: ClusterResourceOverrideSpec{LimitCPUToMemoryPercent: c.pct},
+				}),
+				cpuBaseScaleFactor: factor,
+			}
+			res := &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(c.memory)},
+			}
+			m.OverrideCPULimit(res)
+			validate(t, res.Limits, corev1.ResourceCPU, resource.MustParse(c.want))
+		})
+	}
+}
+
+func TestMutator_OverrideCPULimitSaturates(t *testing.T) {
+	// A percent near the int64 ceiling produces an exact large result rather than a wrapped
+	// negative one, and a result past int64 saturates to MaxInt64. Asserting the exact value
+	// (not just non-negative) also catches a recovered percent that is merely off by a little.
+	cases := []struct {
+		name   string
+		memory string
+		pct    int64
+		want   int64
+	}{
+		{"max percent within int64 floors exactly", "1Mi", math.MaxInt64, 90071992547409919},
+		{"max percent past int64 saturates", "1Gi", math.MaxInt64, math.MaxInt64},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := &podMutator{
+				config: ConvertExternalConfig(&ClusterResourceOverride{
+					Spec: ClusterResourceOverrideSpec{LimitCPUToMemoryPercent: c.pct},
+				}),
+				cpuBaseScaleFactor: factor,
+			}
+			res := &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(c.memory)},
+			}
+			m.OverrideCPULimit(res)
+			got := res.Limits[corev1.ResourceCPU]
+			assert.GreaterOrEqual(t, got.MilliValue(), int64(0), "must never be negative")
+			assert.Equal(t, c.want, got.MilliValue(), "exact saturated or floored value")
+		})
+	}
+}
+
+func TestSaturatingRoundedPercent(t *testing.T) {
+	// The helper recovers an integer percent from the float64 ratio for the legacy path and
+	// must never emit an arbitrary int64 for a non-finite input.
+	assert.Equal(t, int64(0), saturatingRoundedPercent(0))
+	assert.Equal(t, int64(29), saturatingRoundedPercent(0.29))
+	assert.Equal(t, int64(200), saturatingRoundedPercent(2.0))
+	assert.Equal(t, int64(math.MaxInt64), saturatingRoundedPercent(math.Inf(1)))
+	assert.Equal(t, int64(math.MinInt64), saturatingRoundedPercent(math.Inf(-1)))
+	assert.Equal(t, int64(0), saturatingRoundedPercent(math.NaN()), "NaN must not become an arbitrary int64")
+}
+
+func TestConvertExternalConfigPercentRoundTrip(t *testing.T) {
+	// Every supported request percentage (0..100) must survive int64 -> float64/100 ->
+	// Round(*100) exactly, so the CPU request paths are not off by 1m.
+	for p := int64(0); p <= 100; p++ {
+		c := ConvertExternalConfig(&ClusterResourceOverride{
+			Spec: ClusterResourceOverrideSpec{
+				CPURequestToLimitPercent:   p,
+				CPURequestToRequestPercent: p,
+			},
+		})
+		assert.Equal(t, p, saturatingRoundedPercent(c.CpuRequestToLimitRatio), "cpuRequestToLimit percent %d", p)
+		assert.Equal(t, p, saturatingRoundedPercent(c.CpuRequestToRequestRatio), "cpuRequestToRequest percent %d", p)
+	}
+}
+
+func TestMutator_OverrideCPULimitHonorsScaleFactor(t *testing.T) {
+	// cpuBaseScaleFactor is an exported NewMutator parameter; a non-default factor must be
+	// honored, not silently ignored. Doubling the default scale doubles the result.
+	build := func(f float64) *podMutator {
+		m, err := NewMutator(
+			&Config{LimitCPUToMemoryRatio: 1.0},
+			&CPUMemory{}, &CPUMemory{}, f,
+		)
+		require.NoError(t, err)
+		return m
+	}
+	res := func() *corev1.ResourceRequirements {
+		return &corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		}
+	}
+
+	def := res()
+	build(factor).OverrideCPULimit(def)
+	validate(t, def.Limits, corev1.ResourceCPU, resource.MustParse("1000m"))
+
+	doubled := res()
+	build(2 * factor).OverrideCPULimit(doubled)
+	validate(t, doubled.Limits, corev1.ResourceCPU, resource.MustParse("2000m"))
+}
+
+func TestNewMutator_RejectsInvalidScaleFactor(t *testing.T) {
+	for _, f := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), -1} {
+		_, err := NewMutator(&Config{}, &CPUMemory{}, &CPUMemory{}, f)
+		assert.Error(t, err, "factor %v should be rejected", f)
+	}
+	_, err := NewMutator(&Config{}, &CPUMemory{}, &CPUMemory{}, factor)
+	assert.NoError(t, err)
+}
+
+func TestNewMutator_RejectsNonFiniteRatio(t *testing.T) {
+	// A NaN or infinite ratio (only reachable from a directly built Config) must fail
+	// construction rather than be silently treated as 0% at admission time.
+	for _, c := range []*Config{
+		{LimitCPUToMemoryRatio: math.NaN()},
+		{CpuRequestToLimitRatio: math.Inf(1)},
+		{MemoryRequestToLimitRatio: math.Inf(-1)},
+		{CpuRequestToRequestRatio: math.NaN()},
+	} {
+		_, err := NewMutator(c, &CPUMemory{}, &CPUMemory{}, factor)
+		assert.Error(t, err, "non-finite ratio should be rejected")
+	}
+	_, err := NewMutator(&Config{LimitCPUToMemoryRatio: 2.0}, &CPUMemory{}, &CPUMemory{}, factor)
+	assert.NoError(t, err)
+}
+
+func TestOverridePreservesExactPercentThroughConversion(t *testing.T) {
+	// End to end: a whole-number percent from the operator CRD keeps its exact integer
+	// arithmetic through ConvertExternalConfig -> NewMutator -> Mutate, rather than losing the
+	// last millicore to a truncating float cast. Config.Validate is added in #118 and joins
+	// this chain once that merges; the conversion and mutation steps are what this PR changes.
+	podWithLimits := func(limits corev1.ResourceList) *corev1.Pod {
+		return &corev1.Pod{
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{
+					Name:      "app",
+					Resources: corev1.ResourceRequirements{Limits: limits},
+				}},
+			},
+		}
+	}
+
+	t.Run("CPU-to-memory scales a memory limit to an exact CPU limit", func(t *testing.T) {
+		cro := &ClusterResourceOverride{Spec: ClusterResourceOverrideSpec{LimitCPUToMemoryPercent: 29}}
+		mutator, err := NewMutator(ConvertExternalConfig(cro), &CPUMemory{}, &CPUMemory{}, factor)
+		require.NoError(t, err)
+
+		out, err := mutator.Mutate(podWithLimits(corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1536Mi")}))
+		require.NoError(t, err)
+
+		// 1536Mi is 1.5GiB, so 1.5 * 1000 mCPU * 29% is exactly 435m; a float cast yields 434m.
+		got := out.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU]
+		assert.Equal(t, "435m", got.String())
+	})
+
+	t.Run("CPU-request-to-limit sets an exact CPU request", func(t *testing.T) {
+		cro := &ClusterResourceOverride{Spec: ClusterResourceOverrideSpec{CPURequestToLimitPercent: 29}}
+		mutator, err := NewMutator(ConvertExternalConfig(cro), &CPUMemory{}, &CPUMemory{}, factor)
+		require.NoError(t, err)
+
+		out, err := mutator.Mutate(podWithLimits(corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")}))
+		require.NoError(t, err)
+
+		// 100m * 29% is exactly 29m; float64(100)*0.29 is 28.999... and truncates to 28m.
+		got := out.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU]
+		assert.Equal(t, "29m", got.String())
+	})
 }
