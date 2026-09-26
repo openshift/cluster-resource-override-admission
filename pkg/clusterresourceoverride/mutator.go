@@ -1,6 +1,8 @@
 package clusterresourceoverride
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -56,10 +58,18 @@ func (m *podMutator) Mutate(in *corev1.Pod) (out *corev1.Pod, err error) {
 }
 
 const (
-	SpcType                      = "spc_t"
-	SelinuxRelabelResource       = "forceselinuxrelabel"
-	SelinuxRelabelGroup          = "admission.node.openshift.io"
-	OriginalCPURequestAnnotation = "clusterresourceoverrides.admission.autoscaling.openshift.io/original-cpu-request"
+	SpcType                = "spc_t"
+	SelinuxRelabelResource = "forceselinuxrelabel"
+	SelinuxRelabelGroup    = "admission.node.openshift.io"
+
+	// originalCPURequestName is the name segment of OriginalCPURequestAnnotation; the
+	// per-container key appends "-<container>" (or "-hash.<digest>") to it.
+	originalCPURequestName       = "original-cpu-request"
+	OriginalCPURequestAnnotation = "clusterresourceoverrides.admission.autoscaling.openshift.io/" + originalCPURequestName
+
+	// annotationNameSegmentMaxLength is the Kubernetes limit on an annotation key's
+	// name segment (the part after the "/").
+	annotationNameSegmentMaxLength = 63
 )
 
 var (
@@ -106,6 +116,24 @@ func (m *podMutator) Override(container *corev1.Container, current *corev1.Pod) 
 	m.OverrideCPUWithRequest(&container.Resources, container.Name, current)
 }
 
+// originalCPURequestKey returns the annotation key that stores a container's
+// original CPU request. The name segment of an annotation key (the part after the
+// "/") is limited to 63 characters, and a container name can be that long on its
+// own, so a name that would overflow the limit is replaced with a fixed-length hash
+// of the name. Shorter names keep the readable form. Both the writer and the reader
+// derive the key with this helper, so they always agree.
+func originalCPURequestKey(name string) string {
+	suffix := name
+	// The name segment is originalCPURequestName + "-" + suffix; keep it within the limit.
+	if len(originalCPURequestName)+1+len(name) > annotationNameSegmentMaxLength {
+		sum := sha256.Sum256([]byte(name))
+		// A container name is a DNS label and cannot contain a dot, so the "hash."
+		// marker keeps hashed suffixes in a namespace a readable name can never occupy.
+		suffix = "hash." + hex.EncodeToString(sum[:16])
+	}
+	return OriginalCPURequestAnnotation + "-" + suffix
+}
+
 // Annotates pod with original CPU request value. Annotation provides idempotency for
 // OverrideCPUWithRequest in case of reinvocation. Also preserves original value in case
 // of OverrideCPUWithLimit modifying the request prior to OverrideCPUWithRequest.
@@ -118,7 +146,7 @@ func (m *podMutator) AnnotateOriginalRequest(resources *corev1.ResourceRequireme
 		pod.Annotations = map[string]string{}
 	}
 
-	key := fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, name)
+	key := originalCPURequestKey(name)
 	_, found := pod.Annotations[key]
 	if !found {
 		request := resources.Requests[corev1.ResourceCPU]
@@ -248,7 +276,7 @@ func (m *podMutator) OverrideCPUWithRequest(resources *corev1.ResourceRequiremen
 		return
 	}
 
-	key := fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, name)
+	key := originalCPURequestKey(name)
 	strValue, found := pod.Annotations[key]
 	if !found {
 		klog.Warningf("failed to find %q annotation for pod %s/%s; skipping CPU request override", key, pod.Namespace, pod.Name)
