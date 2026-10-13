@@ -2,6 +2,7 @@ package clusterresourceoverride
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,10 +17,10 @@ const (
 )
 
 func TestMutator_Mutate(t *testing.T) {
-	
+
 	cpu := resource.MustParse("1m")
 	memory := resource.MustParse("1Mi")
-	
+
 	// Tests the mutator using CPURequestToLimitRatio as the CPU request override
 	t.Run("WithCpuRequestToLimitRatio", func(t *testing.T) {
 		floor := &CPUMemory{
@@ -92,11 +93,11 @@ func TestMutator_Mutate(t *testing.T) {
 		validate(t, podGot.Spec.Containers[1].Resources.Limits, corev1.ResourceCPU, resource.MustParse("4000m"))
 		validate(t, podGot.Spec.Containers[1].Resources.Requests, corev1.ResourceCPU, resource.MustParse("1000m"))
 	})
-	
+
 	// Tests mutator using CPURequestToRequestRatio as the CPU resource override
 	// Ensures CPURequestToRequestRatio overwrites CPURequestToLimitRatio
 	// Ensures CPURequestToRequestRatio doesn't compute with request from CPURequestToLimitRatio
-	// Tests the per container annotations to ensure the mutator applies the override 
+	// Tests the per container annotations to ensure the mutator applies the override
 	//   according to each container's original request
 	t.Run("WithCpuRequestToRequestRatio", func(t *testing.T) {
 		floor := &CPUMemory{
@@ -301,6 +302,125 @@ func TestMutator_OverrideMemory(t *testing.T) {
 				validate(t, resources.Requests, corev1.ResourceMemory, resource.MustParse("2Gi"))
 			},
 		},
+		{
+			// Regression: limit.Value()*ratioPct overflowed int64 in the
+			// intermediate multiply. 1Ei is well within int64, so at 50% the
+			// request must be 512Pi; the overflowing product yielded ~20.48Pi.
+			name: "WithLargeLimitDoesNotOverflow",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						MemoryRequestToLimitRatio: 0.5,
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("1Ei"),
+				},
+			},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceMemory, resource.MustParse("512Pi"))
+			},
+		},
+		{
+			// Regression: a 512Pi limit made the intermediate product wrap
+			// negative. At 50% the request must be 256Pi.
+			name: "WithVeryLargeLimitDoesNotWrapNegative",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: &Config{
+						MemoryRequestToLimitRatio: 0.5,
+					},
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("512Pi"),
+				},
+			},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceMemory, resource.MustParse("256Pi"))
+			},
+		},
+		{
+			// Regression: MemoryRequestToLimitPercent is stored as a float64 ratio,
+			// and 0.29*100 is 28.999999999999996, so a plain int64 cast truncated 29%
+			// to 28% and undercounted the request. Exercised through the real config
+			// conversion so the float round trip is covered.
+			name: "WithFractionalPercent29DoesNotUndercount",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: ConvertExternalConfig(&ClusterResourceOverride{
+						Spec: ClusterResourceOverrideSpec{MemoryRequestToLimitPercent: 29},
+					}),
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceMemory, resource.MustParse("296Mi"))
+			},
+		},
+		{
+			name: "WithFractionalPercent57DoesNotUndercount",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: ConvertExternalConfig(&ClusterResourceOverride{
+						Spec: ClusterResourceOverrideSpec{MemoryRequestToLimitPercent: 57},
+					}),
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceMemory, resource.MustParse("583Mi"))
+			},
+		},
+		{
+			name: "WithFractionalPercent58DoesNotUndercount",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: ConvertExternalConfig(&ClusterResourceOverride{
+						Spec: ClusterResourceOverrideSpec{MemoryRequestToLimitPercent: 58},
+					}),
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceMemory, resource.MustParse("593Mi"))
+			},
+		},
+		{
+			// DecimalSI limits round down to a whole MB (the modFunc default
+			// branch), not a MiB. 1E at 50% is exactly 500P, with no rounding loss.
+			name: "WithDecimalSILimitRoundsToMB",
+			mutator: func() *podMutator {
+				return &podMutator{
+					config: ConvertExternalConfig(&ClusterResourceOverride{
+						Spec: ClusterResourceOverrideSpec{MemoryRequestToLimitPercent: 50},
+					}),
+				}
+			},
+			input: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("1E"),
+				},
+			},
+			assert: func(t *testing.T, resources *corev1.ResourceRequirements) {
+				validate(t, resources.Requests, corev1.ResourceMemory, resource.MustParse("500P"))
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -314,12 +434,26 @@ func TestMutator_OverrideMemory(t *testing.T) {
 	}
 }
 
+// TestConvertExternalConfig_MemoryPercentRoundTrip locks the invariant behind the
+// 29/57/58 regressions: the external percent is stored as a float64 ratio, and
+// int64(math.Round(ratio*100)) must recover every whole percent exactly. A plain
+// int64 cast truncated 29 to 28, 57 to 56, and 58 to 57; math.Round recovers all 101.
+func TestConvertExternalConfig_MemoryPercentRoundTrip(t *testing.T) {
+	for pct := int64(0); pct <= 100; pct++ {
+		config := ConvertExternalConfig(&ClusterResourceOverride{
+			Spec: ClusterResourceOverrideSpec{MemoryRequestToLimitPercent: pct},
+		})
+		got := int64(math.Round(config.MemoryRequestToLimitRatio * 100))
+		require.Equalf(t, pct, got, "percent %d did not round-trip through the float64 ratio", pct)
+	}
+}
+
 func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 	testContainerName := "test"
 	testAnnotation := fmt.Sprintf("%s-%s", OriginalCPURequestAnnotation, testContainerName)
 	tests := []struct {
 		name    string
-		pod *corev1.Pod
+		pod     *corev1.Pod
 		mutator func() *podMutator
 		input   *corev1.ResourceRequirements
 		assert  func(t *testing.T, resources *corev1.ResourceRequirements)
@@ -330,7 +464,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -354,7 +488,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 				},
 			},
 			mutator: func() *podMutator {
@@ -376,7 +510,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -402,7 +536,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -430,7 +564,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "1000m",
 					},
@@ -460,7 +594,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "2000m",
 					},
@@ -490,7 +624,7 @@ func TestMutator_OverrideCPUWithRequest(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test-ns",
-					Name: "test",
+					Name:      "test",
 					Annotations: map[string]string{
 						testAnnotation: "1000m",
 					},
